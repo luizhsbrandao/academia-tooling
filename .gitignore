@@ -16,3 +16,10 @@ work/
 *.egg-info/
 build/
 dist/
+
+# Segredos — gate em .githooks/pre-commit; nada de .env versionado
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template

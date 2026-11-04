@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — gate local de segredo (gitleaks), offline.
+#
+# Instalação, uma linha por clone (também em AGENTS.md ou README.md):
+#   git config core.hooksPath .githooks
+#
+# Regras em `.gitleaks.toml` na raiz deste repositório (versionado, relativo ao
+# próprio repo — nada de caminho fora dele). Não usa rede: só lê o index.
+#
+# Falha FECHADO: sem gitleaks no PATH ou sem `.gitleaks.toml`, o commit para.
+# Um gate que abre quando falta o binário não é gate. Bypass consciente é
+# `git commit --no-verify` (e o motivo vai no card/commit).
+set -u
+
+topo=$(git rev-parse --show-toplevel 2>/dev/null) || {
+  echo "pre-commit: fora de um repositório git — commit BLOQUEADO." >&2
+  exit 1
+}
+cfg="$topo/.gitleaks.toml"
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks não está no PATH — gate de segredo indisponível." >&2
+  echo "  commit BLOQUEADO. Instale o gitleaks (host: ~/.local/bin/gitleaks) ou" >&2
+  echo "  use 'git commit --no-verify' registrando o motivo." >&2
+  exit 1
+fi
+
+if [ ! -f "$cfg" ]; then
+  echo "pre-commit: $cfg ausente — sem regras explícitas o gate falha aberto." >&2
+  echo "  commit BLOQUEADO. Restaure o arquivo do git." >&2
+  exit 1
+fi
+
+gitleaks git --pre-commit --staged --config "$cfg" \
+  --redact --no-banner --log-level warn -v
+rc=$?
+
+if [ "$rc" -ne 0 ]; then
+  echo "" >&2
+  echo "pre-commit: segredo detectado no conteúdo staged — commit BLOQUEADO." >&2
+  echo "  remova o valor do stage (git restore --staged <arquivo>) e rotacione a" >&2
+  echo "  chave se ela chegou a ser real. Falso positivo: ver a allowlist da regra" >&2
+  echo "  em .gitleaks.toml (acrescente com o motivo ao lado)." >&2
+  exit "$rc"
+fi
+
+exit 0
