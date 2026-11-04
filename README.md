@@ -1,5 +1,9 @@
 # academia-tooling
 
+[![tests](https://github.com/luizhsbrandao/academia-tooling/actions/workflows/tests.yml/badge.svg)](https://github.com/luizhsbrandao/academia-tooling/actions/workflows/tests.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](pyproject.toml)
+
 A conformance checker for `.docx` academic manuscripts (ABNT NBR 14724 and journal-specific
 rule sets) and an auditor for `.bib` bibliographies. Built for Brazilian journal submissions,
 where a desk rejection over a margin, a spacing or a missing reference entry costs months.
