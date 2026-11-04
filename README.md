@@ -108,3 +108,17 @@ check without a negative case.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Gate de segredo (pre-commit)
+
+Todo clone precisa ativar o hook **uma vez** — `core.hooksPath` é config local e não
+viaja com o checkout (worktrees compartilham, porque leem o mesmo config do repo):
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`.githooks/pre-commit` roda `gitleaks` com as regras de `.gitleaks.toml` sobre o
+conteúdo staged e **falha fechado**: sem o binário no `PATH` ou sem o `.toml`, o commit
+para. Bypass consciente é `git commit --no-verify`, com o motivo registrado no commit.
+

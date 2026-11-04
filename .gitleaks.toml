@@ -1,0 +1,143 @@
+# .gitleaks.toml — regras EXPLÍCITAS do gate de segredo deste repositório.
+#
+# Usado pelo hook local `.githooks/pre-commit` (instalação: `git config
+# core.hooksPath .githooks`) e por varredura manual:
+#   gitleaks git --pre-commit --staged -c .gitleaks.toml
+#
+# Por que regras próprias em vez do default embutido do gitleaks: o default é
+# uma rede para *repositório público* — ele traz allowlists de "chave de
+# exemplo" que fazem `AKIA` + 16 caracteres e headers de chave privada
+# (`-{5}BEGIN ...`) passarem sem hit (medido em 8.30.1, ver card t_016ba6b0).
+# Aqui não usamos `[extend] useDefault = true`: as regras são todas explícitas.
+#
+# Critério de calibração: falso positivo custa uma linha de allowlist (e é
+# registrado na linha abaixo da regra que o gerou); falso negativo custa a
+# chave. Regras de *formato de provedor* não têm allowlist nenhuma — se o
+# formato bate, o commit para. Só a regra genérica (a que não tem provedor
+# definido) aceita placeholders, porque ali o valor é prosa, não chave.
+
+title = "gate de segredo — regras explícitas"
+
+# ── Blocos de chave privada ────────────────────────────────────────────────
+# Nota: os headers são escritos como `-{5}BEGIN ...` de propósito — assim o
+# próprio arquivo de regras não casa com a regra (se casasse, o commit que
+# instala o gate seria bloqueado por ele mesmo).
+
+[[rules]]
+id = "pem-private-key"
+description = "Bloco de chave privada PEM"
+regex = '''-{5}BEGIN [A-Z ]*PRIVATE KEY-{5}'''
+
+[[rules]]
+id = "openssh-private-key"
+description = "Chave privada OpenSSH"
+regex = '''-{5}BEGIN OPENSSH PRIVATE KEY-{5}'''
+
+[[rules]]
+id = "private-key-inline"
+description = "Material de chave privada PKCS (base64 longo após header)"
+regex = '''-{5}BEGIN (RSA |EC |DSA |PGP )?PRIVATE KEY-{5}[\s\S]{0,64}?[A-Za-z0-9+/=]{40,}'''
+
+# ── Credenciais de provedor (sem allowlist, de propósito) ──────────────────
+[[rules]]
+id = "aws-access-key"
+description = "AWS access key id"
+regex = '''(AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA)[0-9A-Z]{16}'''
+
+[[rules]]
+id = "aws-secret-key"
+description = "AWS secret access key (atribuição)"
+regex = '''(?i)(aws_secret_access_key|secret_access_key)\s*[:=]\s*['"]?[A-Za-z0-9/+=]{40}'''
+
+[[rules]]
+id = "github-token"
+description = "Token do GitHub (ghp_/gho_/ghu_/ghs_/ghr_/github_pat_)"
+regex = '''(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})'''
+
+[[rules]]
+id = "openai-anthropic-key"
+description = "Chave estilo OpenAI/Anthropic (sk-/sk-ant-/sk-proj-)"
+regex = '''\bsk-(ant-|proj-)?[A-Za-z0-9_\-]{20,}'''
+
+[[rules]]
+id = "google-api-key"
+description = "Google API key"
+regex = '''AIza[0-9A-Za-z_\-]{35}'''
+
+[[rules]]
+id = "slack-token"
+description = "Token do Slack"
+regex = '''xox[baprs]-[0-9A-Za-z\-]{10,}'''
+
+[[rules]]
+id = "elevenlabs-key"
+description = "Chave da ElevenLabs"
+regex = '''sk_[0-9a-f]{48}'''
+
+[[rules]]
+id = "bearer-token"
+description = "Bearer token literal"
+regex = '''(?i)bearer\s+[A-Za-z0-9._\-]{20,}'''
+
+# ── Arquivo .env staged (o clássico) ──────────────────────────────────────
+# Duas camadas: (a) qualquer atribuição não-vazia num `.env` bloqueia —
+# `.env` versionado é erro por convenção, não por conteúdo; (b) a regra por
+# nome de variável, que pega `.env.local`, `.env.production` etc.
+# `.env.example`/`.env.sample`/`.env.template` são isentos de (a): são modelos
+# por definição. As regras de provedor acima continuam valendo neles, então
+# colar uma chave real num `.example` ainda para o commit.
+
+[[rules]]
+id = "dotenv-file-staged"
+description = "Arquivo .env versionado (qualquer atribuição não-vazia)"
+path = '''(?i)(^|/)\.env(\.[\w.-]+)?$'''
+regex = '''(?m)^\s*(export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*\S'''
+[rules.allowlists]
+description = "Modelos versionáveis: placeholders por definição"
+paths = [
+  '''(?i)(^|/)\.env\.(example|sample|template)$''',
+]
+
+[[rules]]
+id = "dotenv-assignment"
+description = "Atribuição de segredo dentro de arquivo .env"
+path = '''(?i)(^|/)\.env(\.[\w.-]+)?$'''
+regex = '''(?i)^\s*[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASSWD|SENHA)[A-Z0-9_]*\s*=\s*\S{8,}'''
+[rules.allowlists]
+regexTarget = "match"
+paths = [
+  '''(?i)(^|/)\.env\.(example|sample|template)$''',
+]
+regexes = [
+  '''(?i)^\s*[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASSWD|SENHA)[A-Z0-9_]*\s*=\s*(<[^>]*>|\{\{.*\}\}|\$\{.*\})\s*$''',
+  '''(?i)^\s*[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASSWD|SENHA)[A-Z0-9_]*\s*=\s*(your[_-]|my[_-]|change[_-]?me|xxx+|todo|replace)''',
+]
+
+# ── Atribuição genérica (única regra com allowlist de placeholder) ────────
+# Exige aspas no valor + 16 caracteres: `token = localStorage.getItem(...)` e
+# `password: process.env.X` não casam (referência de ambiente, sem aspas).
+# Aceita a forma JS/JSON `"api_key": "..."` (aspas fechando antes do `:`).
+[[rules]]
+id = "generic-secret-assignment"
+description = "Atribuição literal de segredo genérico"
+regex = '''(?i)\b(api[_-]?key|access[_-]?key|secret|token|passwd|password|senha)\b["']?\s*[:=]\s*["'][A-Za-z0-9_\-/+=.]{16,}["']'''
+[rules.allowlists]
+regexTarget = "line"
+regexes = [
+  '''(?i)(example|sample|dummy|fake|placeholder|changeme|redacted|sua[_-]?chave|add[_-]?your|<[A-Za-z_]+>|\{\{|\$\{|process\.env|os\.environ|getenv)''',
+  # Cloudflare Web Analytics: o "token" do beacon é público por construção — vai
+  # em claro no HTML de toda página. Não é credencial (medido em sites-plataforma,
+  # Head.tsx: comentário "Token is public by design").
+  '''(?i)data-cf-beacon''',
+]
+
+# ── Ruído conhecido (não é segredo por construção) ────────────────────────
+[allowlist]
+description = "Arquivos de lock e binários: entropia alta sem credencial"
+paths = [
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)Cargo\.lock$''',
+  '''(^|/)pnpm-lock\.yaml$''',
+  '''\.(mp4|m4a|mp3|wav|epub|pdf|png|jpe?g|gif|ico|icns|svg|woff2?|ttf|otf|zip|excalidraw|lock)$''',
+  '''(^|/)\.gitleaks\.toml$''',
+]
