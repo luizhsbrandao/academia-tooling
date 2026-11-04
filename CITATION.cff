@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "Se você usar este software em trabalho acadêmico, cite-o assim / If you use this software in academic work, please cite it as below."
+title: "academia-tooling"
+abstract: >-
+  Verificador de conformidade de manuscrito .docx (ABNT NBR 14724 e conjuntos de regras
+  de periódicos) e auditor de bibliografia .bib. Política de "nunca chutar": todo limite
+  numérico vem de normas.json com fonte citável, e parâmetro que a norma não fixa — ou que
+  o documento não declara — resulta em NAO_VERIFICAVEL, nunca em PASS.
+type: software
+authors:
+  - family-names: "Brandão"
+    given-names: "Luiz Henrique Santos"
+    email: "intellecta.contact@proton.me"
+license: MIT
+version: "0.1.0"
+date-released: "2026-11-04"
+repository-code: "https://github.com/luizhsbrandao/academia-tooling"
+url: "https://github.com/luizhsbrandao/academia-tooling"
+keywords:
+  - abnt
+  - nbr-14724
+  - docx
+  - bibtex
+  - bibliografia
+  - academic-writing
+  - manuscript-conformance
