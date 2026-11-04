@@ -4,8 +4,12 @@ FIX := tests/fixtures/gerados
 .PHONY: venv fixtures test laudo check limpo
 
 venv:
-	uv venv --python 3.13 .venv
-	uv pip install --python $(PY) -e ".[dev]"
+	@if command -v uv >/dev/null 2>&1; then \
+		uv venv --python 3.13 .venv && uv pip install --python $(PY) -e ".[dev]"; \
+	else \
+		echo "uv não encontrado — usando venv/pip"; \
+		python3 -m venv .venv && $(PY) -m pip install -U pip && $(PY) -m pip install -e ".[dev]"; \
+	fi
 
 fixtures:
 	$(PY) -m academia_tooling.fixtures $(FIX)
