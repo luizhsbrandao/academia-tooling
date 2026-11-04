@@ -1,0 +1,50 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Generate synthetic .docx fixtures
+        run: python -m academia_tooling.fixtures tests/fixtures/gerados
+
+      - name: Run the test suite
+        run: python -m pytest
+
+      # The exit code is the contract: 0 = compliant, 1 = FAIL, 3 = could not
+      # verify the document. A smoke test that ignores it proves nothing.
+      - name: Smoke test the CLIs
+        run: |
+          set +e
+          python check_docx.py --arquivo tests/fixtures/gerados/conforme.docx --norma abnt
+          rc=$?
+          echo "conforme.docx exit=$rc"
+          test "$rc" -eq 0
+          python check_docx.py --arquivo tests/fixtures/gerados/fora_de_norma.docx --norma abnt
+          rc=$?
+          echo "fora_de_norma.docx exit=$rc"
+          test "$rc" -eq 1
+          python check_bib.py --bib tests/fixtures/bib_com_problemas.bib
+          rc=$?
+          echo "bib_com_problemas.bib exit=$rc"
+          test "$rc" -eq 1

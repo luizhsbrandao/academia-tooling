@@ -108,7 +108,7 @@ CASOS: list[tuple[str, object, dict, str, bool, str]] = [
         False,
         PASS,
     ),
-    # ---- referências: os falsos positivos medidos no card t_7c691dbc, um por
+    # ---- referências: os falsos positivos medidos, um por
     # causa, em fixtures sintéticas. Todos têm de ser PASS.
     # data de acesso ("Acesso em: … 2026") lida como ano de publicação
     (
@@ -310,7 +310,7 @@ def test_manuscrito_em_nota_de_rodape_nao_e_reprovado(tmp_path, norma_factory):
     assert "nota de rodapé" in resultado.mensagem
 
 
-# --------------------------------- t_7c691dbc: 10 FAIL falsos em manuscrito ABNT
+# --------------------------------- 10 FAIL falsos em manuscrito ABNT
 # Cada teste abaixo isola uma causa medida no manuscrito real. As fixtures são
 # sintéticas (nada de vault): o que se reproduz é o *padrão* da entrada/chamada.
 
@@ -426,7 +426,7 @@ def test_anos_da_entrada_ignora_acesso_doi_e_issn():
     assert _anos_da_entrada("SILVA, J. Um artigo. Revista, 2019. 2. ed. 2021.") == {2019, 2021}
 
 
-# ------------------------------------------------- t_7026bcd5: PASS por estatística
+# ------------------------------------------------- PASS por estatística
 
 
 def test_fonte_tamanho_reprova_formato_direto_em_todo_o_corpo(docx, norma_factory):
@@ -528,7 +528,7 @@ def test_referencias_sem_entrada_nem_citacao_reprova(tmp_path, norma_factory):
     assert resultado.detalhes["entradas"] == 0 and resultado.detalhes["citacoes"] == 0
 
 
-# -------------------- t_516daa8a: FAIL falso (resumo ausente, dois autores, setup)
+# -------------------- FAIL falso (resumo ausente, dois autores, setup)
 
 
 def test_secoes_nao_diz_ausente_quando_o_resumo_e_rotulo_no_corpo(docx, norma_factory):

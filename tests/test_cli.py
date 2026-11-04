@@ -107,7 +107,7 @@ def test_docx_quieto_nao_imprime(docx, capsys):
     assert capsys.readouterr().out == ""
 
 
-# --------------------------------------------- t_7026bcd5: exit code e laudo
+# --------------------------------------------- exit code e laudo
 
 
 def test_docx_10pt_em_todos_os_runs_reprova(docx, capsys):

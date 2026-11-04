@@ -15,9 +15,9 @@ test: fixtures
 
 # Laudo dos fixtures de aceite: um conforme, um fora de norma, um fragmento, o caso
 # de formatação direta (10 pt em todos os runs → FAIL), o espaçamento exato, os três
-# padrões medidos em .docx real no t_516daa8a (resumo como rótulo, chamada de dois
-# autores, .docx sem setup de página), as seis causas de FAIL falso em `referencias`
-# medidas no t_7c691dbc (data de acesso, DOI, apud, título em prosa, autor repetido,
+# padrões medidos em .docx real (resumo como rótulo, chamada de dois autores, .docx
+# sem setup de página) e as seis causas de FAIL falso em `referencias` (data de acesso,
+# DOI, apud, título em prosa, autor repetido,
 # e a trava do verdadeiro positivo) e o .bib.
 laudo: fixtures
 	@echo

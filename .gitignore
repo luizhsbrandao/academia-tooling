@@ -11,3 +11,8 @@ tests/fixtures/gerados/
 
 # rascunho local
 work/
+
+# artefatos de build
+*.egg-info/
+build/
+dist/

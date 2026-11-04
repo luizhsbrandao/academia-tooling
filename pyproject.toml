@@ -2,8 +2,27 @@
 name = "academia-tooling"
 version = "0.1.0"
 description = "Verificador de conformidade de manuscrito .docx (ABNT/REGN/RBCS) e auditor de bibliografia .bib."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["abnt", "docx", "bibliography", "bibtex", "academic-writing", "pt-br"]
 requires-python = ">=3.11"
 dependencies = ["python-docx>=1.1"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Markup",
+    "Topic :: Education",
+    "Natural Language :: Portuguese (Brazilian)",
+]
+
+[project.urls]
+Homepage = "https://github.com/luizhsbrandao/academia-tooling"
+Issues = "https://github.com/luizhsbrandao/academia-tooling/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
@@ -13,7 +32,7 @@ check-docx = "academia_tooling.cli_docx:main"
 check-bib = "academia_tooling.cli_bib:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

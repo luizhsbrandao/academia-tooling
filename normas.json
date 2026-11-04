@@ -34,7 +34,7 @@
       "limites": {
         "palavras": {
           "valor": { "min": 7000, "max": 9000 },
-          "fonte": "Diretrizes de submissão da RBCS: artigos entre 7.000 e 9.000 palavras (registro do card t_91557b48 / ADR-0029 §Implementação 3)"
+          "fonte": "Diretrizes de submissão da RBCS: artigos entre 7.000 e 9.000 palavras"
         },
         "contagem_exclui_referencias": {
           "valor": true,

@@ -126,7 +126,7 @@ def test_duplicata_por_titulo_normalizado():
 
 
 def test_titulo_duplicado_sem_doi_nas_duas_entradas():
-    """t_7026bcd5: duas entradas sem DOI montavam `{""}` (tamanho 1) e nunca disparavam."""
+    """Duas entradas sem DOI montavam `{""}` (tamanho 1) e nunca disparavam."""
     relatorio = auditar_arquivo(SEM_DOI)
     achados = [a for a in relatorio.achados if a.categoria == "titulo_duplicado"]
     assert len(achados) == 1, [a.mensagem for a in relatorio.achados]

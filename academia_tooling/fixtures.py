@@ -88,7 +88,7 @@ FRAGMENTO = [
 ]
 
 # Conteúdo inventado neste módulo: os três casos abaixo reproduzem o *padrão*
-# medido em .docx real (card t_516daa8a), sem trazer nenhum arquivo de vault.
+# medido em .docx real, sem trazer nenhum arquivo de vault.
 ROTULO_RESUMO = {
     "titulo": "Boletins oficiais e a gramática da ameaça interna",
     "resumo": (
@@ -140,7 +140,7 @@ SEM_SETUP = [
 ]
 
 # Os seis casos abaixo reproduzem o *padrão* de uma checagem de referências que
-# acusou 10 vezes sem razão (card t_7c691dbc), medida então em manuscrito ABNT
+# acusou 10 vezes sem razão, medida então em manuscrito ABNT
 # real: nada de vault aqui, as entradas e chamadas são inventadas neste módulo.
 # Cada um isola uma causa — data de acesso, DOI, apud, título em prosa, autor com
 # duas obras — e o caso sem entrada fecha a trava do verdadeiro positivo.
@@ -341,7 +341,7 @@ def conforme(destino: Path) -> Path:
 def direto_10pt(destino: Path) -> Path:
     """Estilo `Normal` 12 pt e TODO o texto em 10 pt Arial por formatação direta.
 
-    É o caso que reprovava o verificador (t_7026bcd5): o laudo lia "12 pt (estilo
+    É o caso que reprovava o verificador: o laudo lia "12 pt (estilo
     Normal)" e dava PASS enquanto o Word mostrava 10 pt em todos os runs. A
     formatação direta vence o estilo — o veredito tem de ser FAIL.
     """
@@ -428,7 +428,7 @@ def _remover_setup_de_pagina(caminho: Path) -> None:
 def resumo_rotulo(destino: Path) -> Path:
     """Resumo e abstract escritos como rótulo em negrito no corpo, sem título.
 
-    Padrão medido no .docx real (t_516daa8a/D1): o resumo existe e não há `Heading`
+    Padrão medido no .docx real: o resumo existe e não há `Heading`
     para ele. `secoes` tem de dizer "presente sem título de seção", nunca "ausente".
     """
     doc = _documento(
@@ -506,7 +506,7 @@ def _artigo(destino: Path, dados: dict) -> Path:
 
 
 def referencias_acesso(destino: Path) -> Path:
-    """Referências online com `Acesso em: … 2026` (F1 do t_7c691dbc).
+    """Referências online com `Acesso em: … 2026`.
 
     O último ano da entrada é o do acesso, não o de publicação: cinco chamadas
     certas (BOSWINKEL 2022, KYRYCHOK 2017, MENN 2025, HSIAO 2018, NATO 2009)
