@@ -1,0 +1,65 @@
+{
+  "versao": 1,
+  "atualizado": "2026-11-04",
+  "regra": "Todo limite numérico carrega 'fonte' citável. Limite null (ou ausente) => o verificador devolve NAO_VERIFICAVEL e NÃO reprova o manuscrito. Nunca preencher por estimativa: se a norma não fixa o parâmetro, deixe null.",
+  "normas": {
+    "abnt": {
+      "nome": "ABNT NBR 14724:2011 — apresentação de trabalhos acadêmicos",
+      "nota": "A NBR 14724 fixa corpo 12 e margens 3/2 cm, mas não fixa família tipográfica nem limite de palavras: esses campos ficam null (=> NAO_VERIFICAVEL). Conferir a edição vigente antes de usar em submissão.",
+      "limites": {
+        "margens_cm": {
+          "valor": { "superior": 3.0, "inferior": 2.0, "esquerda": 3.0, "direita": 2.0 },
+          "fonte": "ABNT NBR 14724:2011 — margens: superior e esquerda 3 cm; inferior e direita 2 cm"
+        },
+        "tamanho_fonte_pt": {
+          "valor": 12.0,
+          "fonte": "ABNT NBR 14724:2011 — texto em corpo 12; citações longas, notas de rodapé, paginação e legendas em corpo menor"
+        },
+        "espacamento_linhas": {
+          "valor": 1.5,
+          "fonte": "ABNT NBR 14724:2011 — espaçamento de 1,5 entre linhas no texto; espaço simples em citações longas e notas"
+        },
+        "secoes_obrigatorias": {
+          "valor": ["titulo", "resumo", "referencias"],
+          "fonte": "ABNT NBR 14724:2011 — elementos do trabalho: título, resumo em língua portuguesa (obrigatório) e referências (pós-textual obrigatório)"
+        },
+        "familia_fonte": null,
+        "palavras": null,
+        "revisao_cega": null
+      }
+    },
+    "rbcs": {
+      "nome": "RBCS — Revista Brasileira de Ciências Sociais",
+      "nota": "Só a faixa de palavras está registrada neste repo. A RBCS não publica, de forma citável aqui, regra tipográfica de manuscrito: margens/fonte/espaçamento/seções ficam null (=> NAO_VERIFICAVEL) até que o edital da chamada seja colado em um JSON próprio (--normas).",
+      "limites": {
+        "palavras": {
+          "valor": { "min": 7000, "max": 9000 },
+          "fonte": "Diretrizes de submissão da RBCS: artigos entre 7.000 e 9.000 palavras (registro do card t_91557b48 / ADR-0029 §Implementação 3)"
+        },
+        "contagem_exclui_referencias": {
+          "valor": true,
+          "fonte": "idem — a faixa se refere ao corpo do artigo, não à lista de referências"
+        },
+        "margens_cm": null,
+        "tamanho_fonte_pt": null,
+        "espacamento_linhas": null,
+        "familia_fonte": null,
+        "secoes_obrigatorias": null,
+        "revisao_cega": null
+      }
+    },
+    "regn": {
+      "nome": "REGN — diretrizes da revista (não citáveis neste repositório)",
+      "nota": "Nenhum limite da REGN é citável a partir daqui, então TODAS as checagens respondem NAO_VERIFICAVEL — por desenho, para não chutar. Preencha 'limites' com o edital da chamada no mesmo formato ({'valor': ..., 'fonte': '...'}) ou passe --normas meu_edital.json.",
+      "limites": {
+        "margens_cm": null,
+        "tamanho_fonte_pt": null,
+        "espacamento_linhas": null,
+        "familia_fonte": null,
+        "palavras": null,
+        "secoes_obrigatorias": null,
+        "revisao_cega": null
+      }
+    }
+  }
+}

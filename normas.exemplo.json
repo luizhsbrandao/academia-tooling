@@ -1,0 +1,36 @@
+{
+  "versao": 1,
+  "atualizado": "2026-11-04",
+  "regra": "Modelo para norma que não está no normas.json (edital de chamada, revista específica). Copie o arquivo, troque os valores e cite a fonte de cada limite. Limite que o documento-fonte não fixa deve ficar null — o verificador responde NAO_VERIFICAVEL.",
+  "normas": {
+    "meu-edital": {
+      "nome": "EXEMPLO — chamada de revista (substituir pelos dados reais)",
+      "nota": "Este é um modelo com valores plausíveis; NÃO use em submissão sem trocar cada 'fonte' pela seção real do edital.",
+      "limites": {
+        "margens_cm": {
+          "valor": { "superior": 3.0, "inferior": 2.0, "esquerda": 3.0, "direita": 2.0 },
+          "fonte": "edital, seção de formatação"
+        },
+        "tamanho_fonte_pt": { "valor": 12, "fonte": "edital, seção de formatação" },
+        "familia_fonte": {
+          "valor": ["Times New Roman", "Arial"],
+          "fonte": "edital, seção de formatação"
+        },
+        "espacamento_linhas": { "valor": 1.5, "fonte": "edital, seção de formatação" },
+        "palavras": {
+          "valor": { "min": 7000, "max": 9000 },
+          "fonte": "edital, seção de extensão"
+        },
+        "contagem_exclui_referencias": {
+          "valor": true,
+          "fonte": "edital, seção de extensão (contagem do corpo)"
+        },
+        "secoes_obrigatorias": {
+          "valor": ["titulo", "resumo", "abstract", "referencias"],
+          "fonte": "edital, seção de estrutura"
+        },
+        "revisao_cega": { "valor": true, "fonte": "edital, seção de avaliação" }
+      }
+    }
+  }
+}

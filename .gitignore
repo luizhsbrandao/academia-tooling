@@ -1,0 +1,13 @@
+# ambiente
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# fixtures .docx são geradas por `academia_tooling/fixtures.py` (binário não entra no git)
+tests/fixtures/gerados/
+*.docx
+
+# rascunho local
+work/

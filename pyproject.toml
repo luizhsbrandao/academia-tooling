@@ -1,0 +1,27 @@
+[project]
+name = "academia-tooling"
+version = "0.1.0"
+description = "Verificador de conformidade de manuscrito .docx (ABNT/REGN/RBCS) e auditor de bibliografia .bib."
+requires-python = ">=3.11"
+dependencies = ["python-docx>=1.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+check-docx = "academia_tooling.cli_docx:main"
+check-bib = "academia_tooling.cli_bib:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["academia_tooling*"]
+
+# Os testes rodam da raiz do repo (`.venv/bin/python -m pytest -q`); `pythonpath`
+# deixa `academia_tooling` importável sem instalar o pacote.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
