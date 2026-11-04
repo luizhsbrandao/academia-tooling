@@ -2,6 +2,13 @@
 
 Regra central: `NAO_VERIFICAVEL` não é sucesso. Só o limite citável em
 `normas.json` autoriza PASS/FAIL; sem limite, o veredito é não verificável.
+
+`NAO_VERIFICAVEL` tem duas origens que NÃO podem se confundir no código de saída:
+
+* `motivo="norma"` — a norma não fixa o parâmetro: é a resposta certa, não reprova;
+* `motivo="documento"` — a norma fixa, mas o documento não permite verificar
+  (nada declarado, espaçamento exato, heurística cega): não verificado ≠ aprovado,
+  então o código de saída é 3 por default.
 """
 
 from __future__ import annotations
@@ -17,13 +24,18 @@ FAIL = "FAIL"
 NAO_VERIFICAVEL = "NAO_VERIFICAVEL"
 STATUS_VALIDOS = (PASS, FAIL, NAO_VERIFICAVEL)
 
+# Por que a checagem não pôde decidir.
+MOTIVO_NORMA = "norma"  # a norma não fixa o parâmetro → resposta correta, exit 0
+MOTIVO_DOCUMENTO = "documento"  # a norma fixa, o documento não permite verificar → exit 3
+MOTIVOS_NAO_VERIFICAVEL = (MOTIVO_NORMA, MOTIVO_DOCUMENTO)
+
 _RANK = {PASS: 0, NAO_VERIFICAVEL: 1, FAIL: 2}
 
 # códigos de saída dos CLIs
 COD_OK = 0
 COD_FAIL = 1
 COD_USO = 2
-COD_NAO_VERIFICAVEL_ESTRITO = 3
+COD_NAO_VERIFICAVEL = 3  # não verificado: documento ilegível, ou qualquer NV com --estrito
 
 
 def pior(*status: str) -> str:
@@ -40,10 +52,26 @@ class Resultado:
     status: str
     mensagem: str
     detalhes: dict[str, Any] = field(default_factory=dict)
+    motivo_nao_verificavel: str | None = None
 
     def __post_init__(self) -> None:
         if self.status not in STATUS_VALIDOS:
             raise ValueError(f"status inválido: {self.status!r} (use {STATUS_VALIDOS})")
+        if self.status == NAO_VERIFICAVEL:
+            if self.motivo_nao_verificavel not in MOTIVOS_NAO_VERIFICAVEL:
+                raise ValueError(
+                    f"{self.id}: NAO_VERIFICAVEL exige motivo_nao_verificavel ∈ "
+                    f"{MOTIVOS_NAO_VERIFICAVEL} (recebido {self.motivo_nao_verificavel!r})"
+                )
+        elif self.motivo_nao_verificavel is not None:
+            raise ValueError(
+                f"{self.id}: motivo_nao_verificavel só existe em NAO_VERIFICAVEL "
+                f"(status {self.status})"
+            )
+
+    @property
+    def nao_verificado_do_documento(self) -> bool:
+        return self.status == NAO_VERIFICAVEL and self.motivo_nao_verificavel == MOTIVO_DOCUMENTO
 
     def como_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -54,11 +82,19 @@ def contar(resultados: Iterable[Resultado]) -> Counter:
 
 
 def codigo_saida(resultados: Sequence[Resultado], estrito: bool = False) -> int:
-    """0 sem FAIL; 1 com FAIL; 3 se estrito e houver NAO_VERIFICAVEL."""
+    """0 sem FAIL; 1 com FAIL; 3 se algo ficou não verificado.
+
+    `NAO_VERIFICAVEL` por falta de limite na norma continua 0 (é a resposta
+    correta). `NAO_VERIFICAVEL` porque o documento não permitiu verificar é 3,
+    mesmo sem `--estrito`: o manuscrito não foi aprovado, foi ignorado.
+    """
     if any(r.status == FAIL for r in resultados):
         return COD_FAIL
-    if estrito and any(r.status == NAO_VERIFICAVEL for r in resultados):
-        return COD_NAO_VERIFICAVEL_ESTRITO
+    for resultado in resultados:
+        if resultado.status != NAO_VERIFICAVEL:
+            continue
+        if estrito or resultado.motivo_nao_verificavel == MOTIVO_DOCUMENTO:
+            return COD_NAO_VERIFICAVEL
     return COD_OK
 
 
@@ -130,9 +166,12 @@ def imprimir_laudo(
     contagem = contar(resultados)
     total = len(resultados)
     citaveis = sum(1 for r in resultados if r.status != NAO_VERIFICAVEL)
+    do_documento = sum(1 for r in resultados if r.nao_verificado_do_documento)
     print(
         f" {total} checagens: {contagem.get(PASS, 0)} PASS · "
         f"{contagem.get(FAIL, 0)} FAIL · {contagem.get(NAO_VERIFICAVEL, 0)} NAO_VERIFICAVEL"
+        f" (norma não fixa: {contagem.get(NAO_VERIFICAVEL, 0) - do_documento}"
+        f" · documento não permitiu verificar: {do_documento})"
     )
     print(f" com veredito (não NAO_VERIFICAVEL): {citaveis}/{total}")
     for linha in rodape:

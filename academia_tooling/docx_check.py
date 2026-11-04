@@ -6,6 +6,16 @@ Cada checagem devolve PASS, FAIL ou NAO_VERIFICAVEL:
 * NAO_VERIFICAVEL — a norma não fixa o parâmetro (limite null/sem fonte) ou o
   .docx não declara o atributo de forma legível por `python-docx` (herança de
   tema, espaçamento exato, etc.). Nunca se converte isso em PASS.
+
+Duas regras que o veredito precisa respeitar (senão o laudo mente):
+
+* **PASS não pode conviver com desvio material.** A formatação direta vence o
+  estilo no Word: se mais de `LIMIAR_DESVIO` dos runs/parágrafos do corpo
+  divergem do padrão declarado — seja por tamanho, família ou espaçamento —, o
+  status é FAIL, com a contagem no veredito.
+* **"Não verificável" tem motivo.** `motivo_nao_verificavel` diz se foi a norma
+  que não fixa o parâmetro (`MOTIVO_NORMA`, não reprova) ou o documento que não
+  permite verificar (`MOTIVO_DOCUMENTO`, exit 3).
 """
 
 from __future__ import annotations
@@ -17,15 +27,21 @@ from pathlib import Path
 from typing import Callable
 
 from docx import Document
-from docx.shared import Length
+from docx.enum.text import WD_LINE_SPACING
+from docx.shared import Length, Pt
 
-from .laudo import FAIL, NAO_VERIFICAVEL, PASS, Resultado
+from .laudo import FAIL, MOTIVO_DOCUMENTO, MOTIVO_NORMA, NAO_VERIFICAVEL, PASS, Resultado
 from .normas import Norma
 from .texto import PARTICULAS, achatar, chave, chave_titulo, contar_palavras, numero
 
 TOL_CM = 0.08  # 3 cm = 1701 twips ≈ 3,0002 cm; a folga cobre arredondamento do Word
 TOL_PT = 0.05
 TOL_ESPACO = 0.02
+
+# Fração máxima de runs/parágrafos do corpo que pode divergir do padrão (por
+# formatação direta) sem reprovar. Acima disso o atributo declarado no estilo não
+# descreve o documento: é PASS por estatística, e o laudo não pode dar PASS.
+LIMIAR_DESVIO = 0.10
 
 MARGENS = (
     ("superior", "top_margin"),
@@ -62,16 +78,17 @@ def _docdefaults_rpr(doc) -> tuple[str | None, float | None]:
     return (nomes[0] if nomes else None), pts
 
 
-def _docdefaults_espaco(doc) -> float | None:
+def _docdefaults_espaco(doc) -> tuple[float | None, bool]:
+    """(múltiplo, é_espaçamento_fixo) de w:docDefaults/w:pPrDefault."""
     elemento = doc.styles.element
     linhas = elemento.xpath("./w:docDefaults/w:pPrDefault/w:pPr/w:spacing/@w:line")
     regras = elemento.xpath("./w:docDefaults/w:pPrDefault/w:pPr/w:spacing/@w:lineRule")
     if not linhas:
-        return None
+        return None, False
     regra = regras[0] if regras else "auto"
     if regra != "auto":
-        return None  # exato/atLeast não é múltiplo comparável com 1,5
-    return float(linhas[0]) / 240.0
+        return None, True  # exato/atLeast fixa altura de linha, não é múltiplo comparável
+    return float(linhas[0]) / 240.0, False
 
 
 def _fonte_normal(doc) -> tuple[str | None, float | None, str]:
@@ -101,10 +118,66 @@ def _fonte_normal(doc) -> tuple[str | None, float | None, str]:
 
 
 def _multiplo(valor) -> float | None:
-    """line_spacing -> múltiplo; Length (espaçamento exato) não é comparável."""
+    """line_spacing -> múltiplo; Length (espaçamento fixo) não é comparável."""
     if valor is None or isinstance(valor, Length):
         return None
     return float(valor)
+
+
+def _espaco_declarado(pPr) -> tuple[float | None, bool]:
+    """(múltiplo, é_espaçamento_fixo) do `w:pPr` de um parágrafo ou estilo.
+
+    `w:lineRule` ausente vale "auto" no OOXML (múltiplo de 240 twips, como o Word
+    grava 1,5 linha em `<w:spacing w:line="360"/>`); "exact" e "atLeast" fixam
+    altura de linha em pontos e **não** são múltiplos comparáveis com 1,5.
+    """
+    if pPr is None:
+        return None, False
+    linha = pPr.spacing_line
+    if linha is None:
+        return None, False
+    regra = pPr.spacing_lineRule
+    if regra is None or regra == WD_LINE_SPACING.MULTIPLE:
+        return linha / Pt(12), False
+    return None, True
+
+
+def _espaco_do_estilo(doc, nome: str = "Normal") -> tuple[float | None, bool]:
+    try:
+        estilo = doc.styles[nome]
+    except KeyError:
+        return None, False
+    return _espaco_declarado(estilo.element.pPr)
+
+
+def _runs_do_corpo(doc) -> list:
+    """Runs com texto dos parágrafos com texto — o que o leitor vê como corpo.
+
+    Run vazio não renderiza nada e não entra na amostra (senão inflaria a fração
+    de "não legível" e transformaria documento legível em NAO_VERIFICAVEL).
+    """
+    return [
+        run
+        for paragrafo in doc.paragraphs
+        if paragrafo.text.strip()
+        for run in paragrafo.runs
+        if run.text.strip()
+    ]
+
+
+def _tamanho_do_run(run, herdado: float | None) -> float | None:
+    """Tamanho efetivo: formatação direta do run vence o estilo Normal."""
+    if run.font.size is not None:
+        return float(run.font.size.pt)
+    return herdado
+
+
+def _familia_do_run(run, herdada: str | None) -> str | None:
+    return run.font.name or herdada
+
+
+def _fracao(parte: int, total: int) -> float:
+    return parte / total if total else 0.0
 
 
 # ---------------------------------------------------------------- estrutura
@@ -265,151 +338,257 @@ def _ano_da_entrada(entrada: str) -> int | None:
 
 def checar_fonte_familia(doc, norma: Norma, estrito: bool = False) -> Resultado:
     limite = norma.limite("familia_fonte")
+    titulo = "família da fonte do corpo"
     if not limite.citavel:
         return Resultado(
             "fonte_familia",
-            "família da fonte do corpo",
+            titulo,
             NAO_VERIFICAVEL,
             "a norma não fixa família tipográfica (limite null em normas.json)",
+            motivo_nao_verificavel=MOTIVO_NORMA,
         )
     nome, _, origem = _fonte_normal(doc)
     permitidas = [chave(f) for f in limite.valor]
-    if not nome:
+    runs = _runs_do_corpo(doc)
+    efetivos = [(run, _familia_do_run(run, nome)) for run in runs]
+    fora = [(run, valor) for run, valor in efetivos if valor and chave(valor) not in permitidas]
+    cegos = [run for run, valor in efetivos if valor is None]
+    detalhes = {
+        "declarada": nome,
+        "origem": origem,
+        "permitidas": limite.valor,
+        "runs": len(runs),
+        "runs_com_formato_direto": sum(1 for run in runs if run.font.name),
+        "runs_fora_do_padrao": len(fora),
+        "runs_sem_familia_legivel": len(cegos),
+        "limiar_desvio": LIMIAR_DESVIO,
+        "fonte": limite.fonte,
+    }
+    exigido = f"permitidas: {', '.join(limite.valor)}"
+    if nome is None and all(valor is None for _, valor in efetivos):
         return Resultado(
             "fonte_familia",
-            "família da fonte do corpo",
+            titulo,
             NAO_VERIFICAVEL,
-            f"família não declarada no .docx ({origem}); não dá para comparar",
+            f"família não declarada no .docx ({origem}) e nenhum run traz a fonte "
+            f"({exigido}); não dá para comparar",
+            detalhes,
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
         )
-    detalhes = {"declarada": nome, "origem": origem, "permitidas": limite.valor, "fonte": limite.fonte}
-    if chave(nome) in permitidas:
-        return Resultado("fonte_familia", "família da fonte do corpo", PASS, f"{nome} ({origem})", detalhes)
+
+    declarada = f"{nome} ({origem})" if nome else "não declarada no estilo (só no run)"
+    contagem = f"{len(fora)}/{len(runs)} runs fora do padrão"
+    if _fracao(len(fora), len(runs)) > LIMIAR_DESVIO:
+        familias = sorted({valor for _, valor in fora})
+        return Resultado(
+            "fonte_familia",
+            titulo,
+            FAIL,
+            f"{declarada}; {contagem} ({', '.join(familias)}); {exigido}",
+            detalhes,
+        )
+    if _fracao(len(cegos), len(runs)) > LIMIAR_DESVIO:
+        return Resultado(
+            "fonte_familia",
+            titulo,
+            NAO_VERIFICAVEL,
+            f"{declarada}; {len(cegos)}/{len(runs)} runs sem família legível "
+            f"(herança de tema) — não verificável",
+            detalhes,
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
+        )
     return Resultado(
         "fonte_familia",
-        "família da fonte do corpo",
-        FAIL,
-        f"{nome} ({origem}); permitidas: {', '.join(limite.valor)}",
+        titulo,
+        PASS,
+        f"{declarada}; {contagem}; {exigido}",
         detalhes,
     )
 
 
 def checar_fonte_tamanho(doc, norma: Norma, estrito: bool = False) -> Resultado:
     limite = norma.limite("tamanho_fonte_pt")
+    titulo = "tamanho da fonte do corpo"
     if not limite.citavel:
         return Resultado(
             "fonte_tamanho",
-            "tamanho da fonte do corpo",
+            titulo,
             NAO_VERIFICAVEL,
             "a norma não fixa corpo (limite null em normas.json)",
+            motivo_nao_verificavel=MOTIVO_NORMA,
         )
     esperado = float(limite.valor)
     _, tamanho, origem = _fonte_normal(doc)
-    if tamanho is None:
-        return Resultado(
-            "fonte_tamanho",
-            "tamanho da fonte do corpo",
-            NAO_VERIFICAVEL,
-            f"corpo não declarado no .docx ({origem}); não dá para comparar com {esperado:g} pt",
-        )
-    desvios = 0
-    total_runs = 0
-    for paragrafo in doc.paragraphs:
-        if not paragrafo.text.strip():
-            continue
-        for run in paragrafo.runs:
-            if run.font.size is not None:
-                total_runs += 1
-                if abs(float(run.font.size.pt) - esperado) > TOL_PT:
-                    desvios += 1
+    runs = _runs_do_corpo(doc)
+    efetivos = [(run, _tamanho_do_run(run, tamanho)) for run in runs]
+    fora = [(run, valor) for run, valor in efetivos if valor is not None and abs(valor - esperado) > TOL_PT]
+    cegos = [run for run, valor in efetivos if valor is None]
     detalhes = {
         "declarado_pt": tamanho,
         "origem": origem,
         "exigido_pt": esperado,
-        "runs_com_tamanho_explicito": total_runs,
-        "runs_fora_do_padrao": desvios,
+        "runs": len(runs),
+        "runs_com_formato_direto": sum(1 for run in runs if run.font.size is not None),
+        "runs_fora_do_padrao": len(fora),
+        "runs_sem_tamanho_legivel": len(cegos),
+        "limiar_desvio": LIMIAR_DESVIO,
         "fonte": limite.fonte,
     }
-    nota = f"; {desvios}/{total_runs} runs com override fora do padrão" if desvios else ""
-    if abs(tamanho - esperado) <= TOL_PT:
+    if tamanho is None and all(valor is None for _, valor in efetivos):
         return Resultado(
             "fonte_tamanho",
-            "tamanho da fonte do corpo",
-            PASS,
-            f"{numero(tamanho)} pt ({origem}), exigido {numero(esperado)} pt{nota}",
+            titulo,
+            NAO_VERIFICAVEL,
+            f"corpo não declarado no .docx ({origem}) e nenhum run traz tamanho; "
+            f"não dá para comparar com {numero(esperado)} pt",
             detalhes,
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
+        )
+
+    base = (
+        f"{numero(tamanho)} pt ({origem})" if tamanho is not None else "só formatação direta"
+    )
+    if not runs:
+        base = f"{base}, exigido {numero(esperado)} pt; documento sem runs de texto"
+        fora_total = 1 if tamanho is not None and abs(tamanho - esperado) > TOL_PT else 0
+        return Resultado(
+            "fonte_tamanho",
+            titulo,
+            FAIL if fora_total else PASS,
+            base,
+            detalhes,
+        )
+    contagem = f"{len(fora)}/{len(runs)} runs fora do padrão"
+    if _fracao(len(fora), len(runs)) > LIMIAR_DESVIO:
+        tamanhos = sorted({numero(valor) for _, valor in fora})
+        return Resultado(
+            "fonte_tamanho",
+            titulo,
+            FAIL,
+            f"{base}, exigido {numero(esperado)} pt; {contagem} ({', '.join(tamanhos)} pt)",
+            detalhes,
+        )
+    if _fracao(len(cegos), len(runs)) > LIMIAR_DESVIO:
+        return Resultado(
+            "fonte_tamanho",
+            titulo,
+            NAO_VERIFICAVEL,
+            f"{base}, exigido {numero(esperado)} pt; {len(cegos)}/{len(runs)} runs sem "
+            "tamanho legível — não verificável",
+            detalhes,
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
         )
     return Resultado(
         "fonte_tamanho",
-        "tamanho da fonte do corpo",
-        FAIL,
-        f"{numero(tamanho)} pt ({origem}), exigido {numero(esperado)} pt{nota}",
+        titulo,
+        PASS,
+        f"{base}, exigido {numero(esperado)} pt; {contagem}",
         detalhes,
     )
 
 
 def checar_espacamento(doc, norma: Norma, estrito: bool = False) -> Resultado:
     limite = norma.limite("espacamento_linhas")
+    titulo = "espaçamento entre linhas do corpo"
     if not limite.citavel:
         return Resultado(
             "espacamento",
-            "espaçamento entre linhas do corpo",
+            titulo,
             NAO_VERIFICAVEL,
             "a norma não fixa espaçamento (limite null em normas.json)",
+            motivo_nao_verificavel=MOTIVO_NORMA,
         )
     esperado = float(limite.valor)
 
-    padrao = _multiplo(doc.styles["Normal"].paragraph_format.line_spacing)
+    padrao, padrao_fixo = _espaco_do_estilo(doc)
     origem_padrao = "estilo Normal"
-    if padrao is None:
-        padrao = _docdefaults_espaco(doc)
-        origem_padrao = "docDefaults" if padrao is not None else "nada declarado"
+    if padrao is None and not padrao_fixo:
+        padrao, padrao_fixo = _docdefaults_espaco(doc)
+        origem_padrao = "docDefaults" if (padrao is not None or padrao_fixo) else "nada declarado"
 
     valores: list[float] = []
+    fixos = 0
     for paragrafo in doc.paragraphs:
         if not paragrafo.text.strip():
             continue
-        valor = _multiplo(paragrafo.paragraph_format.line_spacing)
-        efetivo = valor if valor is not None else padrao
+        multiplo, fixo = _espaco_declarado(paragrafo._p.pPr)
+        if fixo:
+            # Espaçamento fixo (w:lineRule exact/atLeast) NÃO é múltiplo: não se
+            # pode cair no padrão do estilo e inventar conformidade.
+            fixos += 1
+            continue
+        efetivo = multiplo if multiplo is not None else padrao
         if efetivo is not None:
             valores.append(round(efetivo, 2))
+        elif padrao_fixo:
+            fixos += 1
+
+    total = len(valores) + fixos
+    nota = f" (padrão: {origem_padrao})" if origem_padrao != "estilo Normal" else ""
+    if total == 0:
+        return Resultado(
+            "espacamento",
+            titulo,
+            NAO_VERIFICAVEL,
+            "nenhum parágrafo/estilo declara espaçamento em múltiplo; o efetivo vem do tema e não é legível",
+            {"origem_padrao": origem_padrao, "exigido": esperado, "fonte": limite.fonte},
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
+        )
+
+    contagem = Counter(valores)
+    desvios = sum(1 for v in valores if abs(v - esperado) > TOL_ESPACO)
+    detalhes = {
+        "moda": contagem.most_common(1)[0][0] if valores else None,
+        "distribuicao": dict(contagem),
+        "paragrafos": len(valores),
+        "paragrafos_fora": desvios,
+        "paragrafos_com_espaco_fixo": fixos,
+        "total_paragrafos": total,
+        "origem_padrao": origem_padrao,
+        "exigido": esperado,
+        "limiar_desvio": LIMIAR_DESVIO,
+        "fonte": limite.fonte,
+    }
 
     if not valores:
         return Resultado(
             "espacamento",
-            "espaçamento entre linhas do corpo",
+            titulo,
             NAO_VERIFICAVEL,
-            "nenhum parágrafo/estilo declara espaçamento em múltiplo; o efetivo vem do tema e não é legível",
-            {"fonte": limite.fonte},
+            f"{fixos} parágrafo(s) usam espaçamento exato (w:lineRule exact/atLeast), que "
+            f"não é múltiplo comparável com {numero(esperado)}{nota}",
+            detalhes,
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
         )
 
-    contagem = Counter(valores)
     moda, ocorrencias = contagem.most_common(1)[0]
-    desvios = sum(1 for v in valores if abs(v - esperado) > TOL_ESPACO)
-    detalhes = {
-        "moda": moda,
-        "distribuicao": dict(contagem),
-        "paragrafos": len(valores),
-        "paragrafos_fora": desvios,
-        "origem_padrao": origem_padrao,
-        "exigido": esperado,
-        "fonte": limite.fonte,
-    }
-    nota = f" (padrão: {origem_padrao})" if origem_padrao != "estilo Normal" else ""
-    if abs(moda - esperado) <= TOL_ESPACO:
+
+    sobra_fixo = f"; {fixos} parágrafo(s) com espaçamento exato" if fixos else ""
+    if _fracao(desvios, total) > LIMIAR_DESVIO:
         return Resultado(
             "espacamento",
-            "espaçamento entre linhas do corpo",
-            PASS,
-            f"{numero(moda)} na maioria ({ocorrencias}/{len(valores)} parágrafos); "
-            f"{desvios} fora do padrão{nota}",
+            titulo,
+            FAIL,
+            f"moda {numero(moda)}, exigido {numero(esperado)}; "
+            f"{desvios}/{total} parágrafos fora{sobra_fixo}{nota}",
             detalhes,
+        )
+    if _fracao(fixos, total) > LIMIAR_DESVIO:
+        return Resultado(
+            "espacamento",
+            titulo,
+            NAO_VERIFICAVEL,
+            f"{fixos}/{total} parágrafos usam espaçamento exato (w:lineRule exact/atLeast); "
+            f"não comparável com {numero(esperado)}{nota}",
+            detalhes,
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
         )
     return Resultado(
         "espacamento",
-        "espaçamento entre linhas do corpo",
-        FAIL,
-        f"moda {numero(moda)}, exigido {numero(esperado)}; "
-        f"{desvios}/{len(valores)} parágrafos fora{nota}",
+        titulo,
+        PASS,
+        f"{numero(moda)} em {ocorrencias}/{len(valores)} parágrafos com múltiplo; "
+        f"{desvios} fora do padrão{sobra_fixo}{nota}",
         detalhes,
     )
 
@@ -422,11 +601,18 @@ def checar_margens(doc, norma: Norma, estrito: bool = False) -> Resultado:
             "margens da página",
             NAO_VERIFICAVEL,
             "a norma não fixa margens (limite null em normas.json)",
+            motivo_nao_verificavel=MOTIVO_NORMA,
         )
     esperado = limite.valor
     secoes = list(doc.sections)
     if not secoes:
-        return Resultado("margens", "margens da página", NAO_VERIFICAVEL, "documento sem seção legível")
+        return Resultado(
+            "margens",
+            "margens da página",
+            NAO_VERIFICAVEL,
+            "documento sem seção legível",
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
+        )
 
     problemas: list[str] = []
     indefinidas: list[str] = []
@@ -465,6 +651,7 @@ def checar_margens(doc, norma: Norma, estrito: bool = False) -> Resultado:
             NAO_VERIFICAVEL,
             "; ".join(indefinidas),
             detalhes,
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
         )
     return Resultado(
         "margens",
@@ -483,6 +670,7 @@ def checar_secoes(doc, norma: Norma, estrito: bool = False) -> Resultado:
             "título/abstract/resumo presentes",
             NAO_VERIFICAVEL,
             "a norma não fixa seções obrigatórias (limite null em normas.json)",
+            motivo_nao_verificavel=MOTIVO_NORMA,
         )
     estrutura = _estrutura(doc)
     exigidas: list[str] = limite.valor
@@ -508,6 +696,7 @@ def checar_secoes(doc, norma: Norma, estrito: bool = False) -> Resultado:
             NAO_VERIFICAVEL,
             "nenhum cabeçalho reconhecível (título/resumo/abstract/referências): heurística não decide",
             detalhes,
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
         )
     if faltando:
         return Resultado(
@@ -557,6 +746,7 @@ def checar_palavras(doc, norma: Norma, estrito: bool = False) -> Resultado:
             NAO_VERIFICAVEL,
             f"{contado} palavras{nota}; a norma não fixa faixa",
             detalhes,
+            motivo_nao_verificavel=MOTIVO_NORMA,
         )
     minimo, maximo = limite.valor["min"], limite.valor["max"]
     detalhes.update({"min": minimo, "max": maximo})
@@ -593,6 +783,7 @@ def checar_autor(doc, norma: Norma, estrito: bool = False) -> Resultado:
             NAO_VERIFICAVEL,
             "a norma escolhida não declara revisão cega (limite null em normas.json)",
             detalhes,
+            motivo_nao_verificavel=MOTIVO_NORMA,
         )
     if not limite.valor:
         return Resultado(
@@ -601,6 +792,7 @@ def checar_autor(doc, norma: Norma, estrito: bool = False) -> Resultado:
             NAO_VERIFICAVEL,
             "a norma declara revisão não cega; metadado não é exigência",
             detalhes,
+            motivo_nao_verificavel=MOTIVO_NORMA,
         )
 
     def anonimo(valor: str) -> bool:
@@ -640,6 +832,7 @@ def checar_referencias(doc, norma: Norma, estrito: bool = False) -> Resultado:
             NAO_VERIFICAVEL,
             "a norma não exige bloco de referências (limite null): coerência bibliográfica não verificada",
             {"fonte": limite.fonte if limite.citavel else None},
+            motivo_nao_verificavel=MOTIVO_NORMA,
         )
     estrutura = _estrutura(doc)
     entradas = _bloco_referencias(estrutura)
@@ -678,11 +871,15 @@ def checar_referencias(doc, norma: Norma, estrito: bool = False) -> Resultado:
     }
 
     if not citacoes and not entradas:
+        # A norma exige referências e o documento não traz nem entrada nem citação:
+        # não é "não verificável", é ausência do elemento exigido.
+        detalhes["provavel_fragmento"] = True
         return Resultado(
             "referencias",
             "referências: entradas × citações",
-            NAO_VERIFICAVEL,
-            "sem citações autor-data e sem bloco de referências reconhecível (provável fragmento)",
+            FAIL,
+            "a norma exige bloco de referências e o documento não tem nenhuma entrada "
+            "nem citação autor-data (provável fragmento, não artigo completo)",
             detalhes,
         )
     if citacoes and not entradas:
@@ -701,6 +898,7 @@ def checar_referencias(doc, norma: Norma, estrito: bool = False) -> Resultado:
             f"{len(entradas)} entradas, nenhuma citação autor-data no corpo "
             "(pode usar nota de rodapé: não verificável)",
             detalhes,
+            motivo_nao_verificavel=MOTIVO_DOCUMENTO,
         )
     if sem_entrada or anos_divergentes:
         partes = []

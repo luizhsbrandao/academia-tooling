@@ -9,6 +9,18 @@ import pytest
 
 from academia_tooling.cli_bib import main as main_bib
 from academia_tooling.cli_docx import main as main_docx
+from academia_tooling.laudo import (
+    COD_FAIL,
+    COD_NAO_VERIFICAVEL,
+    COD_OK,
+    FAIL,
+    MOTIVO_DOCUMENTO,
+    MOTIVO_NORMA,
+    NAO_VERIFICAVEL,
+    PASS,
+    Resultado,
+    codigo_saida,
+)
 
 FIX = Path(__file__).resolve().parent / "fixtures"
 REPO = Path(__file__).resolve().parent.parent
@@ -93,6 +105,62 @@ def test_docx_arquivo_corrompido_exit_2(tmp_path, capsys):
 def test_docx_quieto_nao_imprime(docx, capsys):
     assert main_docx(["--arquivo", str(docx["fora_de_norma"]), "--norma", "abnt", "--quieto"]) == 1
     assert capsys.readouterr().out == ""
+
+
+# --------------------------------------------- t_7026bcd5: exit code e laudo
+
+
+def test_docx_10pt_em_todos_os_runs_reprova(docx, capsys):
+    """Fixture permanente: Normal 12 pt, corpo inteiro em 10 pt Arial → FAIL e exit 1."""
+    codigo = main_docx(["--arquivo", str(docx["direto_10pt"]), "--norma", "abnt"])
+    saida = capsys.readouterr().out
+    assert codigo == 1
+    linha = next(linha for linha in saida.splitlines() if linha.startswith("fonte_tamanho"))
+    assert "FAIL" in linha, linha
+    assert "PASS" not in linha, linha
+    achatada = " ".join(saida.split())  # a tabela quebra a mensagem em 60 colunas
+    assert "runs fora do padrão (10 pt)" in achatada
+    assert "exigido 12 pt" in achatada
+    assert "exit 1" in saida
+
+
+def test_docx_nao_verificavel_de_documento_exit_3(docx, capsys):
+    """Espaçamento exato: a norma fixa 1,5, o documento não permite verificar → exit 3."""
+    codigo = main_docx(["--arquivo", str(docx["espaco_exato"]), "--norma", "abnt"])
+    saida = capsys.readouterr().out
+    assert codigo == 3, saida
+    linha = next(linha for linha in saida.splitlines() if linha.startswith("espacamento"))
+    assert "NAO_VERIFICAVEL" in linha
+    assert "documento não permitiu verificar: 1" in saida
+    assert "exit 3" in saida
+
+
+def test_docx_nao_verificavel_de_norma_continua_exit_0(docx, capsys):
+    """REGN não fixa nada: NAO_VERIFICAVEL por falta de limite é a resposta certa, exit 0."""
+    assert main_docx(["--arquivo", str(docx["conforme"]), "--norma", "regn"]) == 0
+    assert "documento não permitiu verificar: 0" in capsys.readouterr().out
+
+
+def test_codigo_saida_separa_norma_de_documento():
+    def resultado(id_: str, status: str, motivo: str | None = None) -> Resultado:
+        return Resultado(id_, id_, status, "mensagem", {}, motivo_nao_verificavel=motivo)
+
+    passa = resultado("a", PASS)
+    norma = resultado("b", NAO_VERIFICAVEL, MOTIVO_NORMA)
+    documento = resultado("c", NAO_VERIFICAVEL, MOTIVO_DOCUMENTO)
+    falha = resultado("d", FAIL)
+
+    assert codigo_saida([passa, norma]) == COD_OK
+    assert codigo_saida([passa, documento]) == COD_NAO_VERIFICAVEL  # exit 3 por default
+    assert codigo_saida([passa, norma], estrito=True) == COD_NAO_VERIFICAVEL
+    assert codigo_saida([documento, falha]) == COD_FAIL  # FAIL vence
+
+
+def test_resultado_recusa_nao_verificavel_sem_motivo():
+    with pytest.raises(ValueError):
+        Resultado("x", "x", NAO_VERIFICAVEL, "sem motivo")
+    with pytest.raises(ValueError):
+        Resultado("x", "x", PASS, "pass com motivo", motivo_nao_verificavel=MOTIVO_NORMA)
 
 
 def test_docx_normas_proprias(tmp_path, docx, capsys):

@@ -13,6 +13,7 @@ from academia_tooling.bib_parse import Entrada, ler, normalizar_doi, parsear
 FIX = Path(__file__).resolve().parent / "fixtures"
 COM_PROBLEMAS = FIX / "bib_com_problemas.bib"
 OK = FIX / "bib_ok.bib"
+SEM_DOI = FIX / "bib_titulo_sem_doi.bib"
 TEXTO_PROBLEMAS = FIX / "texto_problemas.tex"
 TEXTO_OK = FIX / "texto_ok.tex"
 
@@ -122,6 +123,25 @@ def test_duplicata_por_titulo_normalizado():
     relatorio = auditar_arquivo(COM_PROBLEMAS, texto=TEXTO_PROBLEMAS.read_text(encoding="utf-8"))
     achado = next(a for a in relatorio.achados if a.categoria == "titulo_duplicado")
     assert set(achado.chaves) == {"silva2020", "souza2021"}
+
+
+def test_titulo_duplicado_sem_doi_nas_duas_entradas():
+    """t_7026bcd5: duas entradas sem DOI montavam `{""}` (tamanho 1) e nunca disparavam."""
+    relatorio = auditar_arquivo(SEM_DOI)
+    achados = [a for a in relatorio.achados if a.categoria == "titulo_duplicado"]
+    assert len(achados) == 1, [a.mensagem for a in relatorio.achados]
+    assert achados[0].severidade == ERRO
+    assert set(achados[0].chaves) == {"lima2018", "lima2018b"}
+    assert codigo_saida(relatorio) == 1
+
+
+def test_grupo_com_doi_compartilhado_nao_duplica_o_achado():
+    """Mesmo título + mesmo DOI já é `doi_duplicado`: não se reporta duas vezes."""
+    relatorio = auditar_arquivo(COM_PROBLEMAS)
+    grupos_doi = [set(a.chaves) for a in relatorio.achados if a.categoria == "doi_duplicado"]
+    grupos_titulo = [set(a.chaves) for a in relatorio.achados if a.categoria == "titulo_duplicado"]
+    assert {"silva2020", "silva2020b"} in grupos_doi
+    assert {"silva2020", "silva2020b"} not in grupos_titulo
 
 
 def test_campo_obrigatorio_por_tipo():

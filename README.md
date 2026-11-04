@@ -43,10 +43,16 @@ make check
 
 | código | significado |
 |---|---|
-| 0 | nenhum `FAIL` (pode haver `NAO_VERIFICAVEL`) |
+| 0 | nenhum `FAIL` e nada ficou sem verificar (só `NAO_VERIFICAVEL` **por falta de limite na norma**, que é a resposta correta) |
 | 1 | pelo menos um `FAIL` |
 | 2 | erro de uso: `.docx` inexistente/corrompido, norma desconhecida, `normas.json` inválido |
-| 3 | `--estrito` e alguma checagem `NAO_VERIFICAVEL` (úsil em CI: "não verificado" reprova) |
+| 3 | alguma checagem não pôde verificar **o documento** (nada declarado, espaçamento exato, heurística cega) — ou qualquer `NAO_VERIFICAVEL` com `--estrito` |
+
+`NAO_VERIFICAVEL` sempre carrega `motivo_nao_verificavel ∈ {norma, documento}`:
+
+* **`norma`** — a norma não fixa o parâmetro (`null` em `normas.json`): exit `0`, é a resposta certa;
+* **`documento`** — a norma fixa, mas o `.docx` não permite verificar: exit `3` **por default**.
+  Não verificado não é aprovado; o código de saída não trata os dois casos como iguais.
 
 ### Códigos de saída — `check_bib.py`
 
@@ -89,16 +95,21 @@ Normas embarcadas:
 
 ## O que cada checagem faz
 
+Toda checagem de forma (`fonte_familia`, `fonte_tamanho`, `espacamento`) compara o
+**efetivo**: a formatação direta do run/parágrafo vence o estilo `Normal`. Se mais de
+`LIMIAR_DESVIO` (**10 %**, em `docx_check.py`) do corpo divergir do padrão declarado, o
+status é `FAIL` com a contagem no veredito — `PASS` não convive com desvio material.
+
 | checagem | como decide |
 |---|---|
-| `fonte_familia` | família do estilo `Normal` (fallback `docDefaults`), comparada sem acento/caixa |
-| `fonte_tamanho` | tamanho do `Normal`; reporta também runs com `size` explícito fora do padrão |
-| `espacamento` | `paragraph_format.line_spacing` dos parágrafos, com herança de estilo/`docDefaults`; decide pela **moda** e conta os fora |
+| `fonte_familia` | família efetiva de cada run do corpo (direta ou herdada do `Normal`/`docDefaults`), comparada sem acento/caixa; > 10 % fora das permitidas → `FAIL` |
+| `fonte_tamanho` | tamanho efetivo de cada run (direto ou herdado); > 10 % fora do corpo exigido → `FAIL` com "N/M runs fora do padrão" |
+| `espacamento` | `w:spacing` de cada parágrafo (herança de estilo/`docDefaults`); > 10 % dos parágrafos fora do múltiplo exigido → `FAIL`. Espaçamento **exato** (`w:lineRule="exact"`/`atLeast`) não é múltiplo comparável → `NAO_VERIFICAVEL` (motivo `documento`), nunca `PASS` |
 | `margens` | `section.top/bottom/left/right_margin` em cm, tolerância 0,08 cm (arredondamento twips) |
 | `secoes` | cabeçalhos reconhecidos por regex (Resumo/Abstract/Referências/seções numeradas); título = primeira linha curta sem ponto final |
 | `palavras` | contagem por token, total e por seção; respeita `contagem_exclui_referencias` |
 | `autor_metadado` | `core_properties.author` e `last_modified_by` contra marcadores de anonimização |
-| `referencias` | extrai `(SOBRENOME, ano)` e `Sobrenome (ano)` do corpo e casa com os sobrenomes/anos do bloco final |
+| `referencias` | extrai `(SOBRENOME, ano)` e `Sobrenome (ano)` do corpo e casa com os sobrenomes/anos do bloco final; sem **nenhuma** entrada nem citação, a norma que exige referências reprova (`FAIL`) |
 
 ### O que **não** é coberto
 
@@ -106,12 +117,13 @@ Normas embarcadas:
 * **Estilo de citação**: não valida NBR 10520/6023 (recuo de citação longa, ordem dos
   elementos da referência, itálico, pontuação). `referencias` compara *quem* foi citado,
   não *como*.
-* **Citações em nota de rodapé / sistema numérico**: não lidas. Manuscrito de História
-  com notas cai em `NAO_VERIFICAVEL` na checagem `referencias` — de propósito.
+* **Citações em nota de rodapé / sistema numérico**: não lidas. Manuscrito que tem
+  referências mas nenhuma citação autor-data cai em `NAO_VERIFICAVEL` (motivo `documento`)
+  na checagem `referencias` — de propósito; sem referências **e** sem citações, é `FAIL`.
 * **Herança de tema**: `python-docx` não resolve `theme1.xml`. Fonte/espaçamento definidos
-  só no tema aparecem como `nada declarado` → `NAO_VERIFICAVEL`.
-* **Fonte por run / por parágrafo**: `fonte_familia` olha o estilo `Normal`; overrides
-  individuais não são comparados (só `fonte_tamanho` os conta).
+  só no tema aparecem como `nada declarado` → `NAO_VERIFICAVEL` (motivo `documento`, exit 3).
+* **Espaçamento misto**: se uma minoria de parágrafos (< 10 %) usa espaçamento exato, o
+  veredito `PASS` aparece com a contagem no rodapé; o texto exato em si não é medido.
 * **Texto fora de `doc.paragraphs`**: tabelas, cabeçalho/rodapé, notas de rodapé, caixas de
   texto e campos não entram na contagem de palavras nem na extração de citações.
 * **Conteúdo**: nada de qualidade argumentativa, plágio, ortografia, adequação ao escopo.

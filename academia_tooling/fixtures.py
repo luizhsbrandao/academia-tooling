@@ -130,16 +130,14 @@ def _apagar_declaracoes(doc: Document) -> None:
                 rpr.remove(filho)
 
 
-def conforme(destino: Path) -> Path:
-    """ABNT conforme: Times 12, 1,5, margens 3/2/3/2, resumo, referências casando."""
-    doc = _documento(
-        fonte="Times New Roman",
-        tamanho=12,
-        espaco=1.5,
-        margens_cm=(3.0, 2.0, 3.0, 2.0),
-        autor="",
-        editor="",
-    )
+def _salvar(doc: Document, destino: Path) -> Path:
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(destino))
+    return destino
+
+
+def _escrever_conforme(doc: Document) -> None:
+    """Conteúdo do artigo de teste (título, resumo, corpo, referências casando)."""
     doc.add_paragraph(CONFORME["titulo"])
     doc.add_paragraph("Resumo")
     doc.add_paragraph(CONFORME["resumo"])
@@ -151,9 +149,59 @@ def conforme(destino: Path) -> Path:
     doc.add_paragraph("Referências")
     for entrada in CONFORME["referencias"]:
         doc.add_paragraph(entrada)
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(destino))
-    return destino
+
+
+def conforme(destino: Path) -> Path:
+    """ABNT conforme: Times 12, 1,5, margens 3/2/3/2, resumo, referências casando."""
+    doc = _documento(
+        fonte="Times New Roman",
+        tamanho=12,
+        espaco=1.5,
+        margens_cm=(3.0, 2.0, 3.0, 2.0),
+        autor="",
+        editor="",
+    )
+    _escrever_conforme(doc)
+    return _salvar(doc, destino)
+
+
+def direto_10pt(destino: Path) -> Path:
+    """Estilo `Normal` 12 pt e TODO o texto em 10 pt Arial por formatação direta.
+
+    É o caso que reprovava o verificador (t_7026bcd5): o laudo lia "12 pt (estilo
+    Normal)" e dava PASS enquanto o Word mostrava 10 pt em todos os runs. A
+    formatação direta vence o estilo — o veredito tem de ser FAIL.
+    """
+    doc = _documento(
+        fonte="Times New Roman",
+        tamanho=12,
+        espaco=1.5,
+        margens_cm=(3.0, 2.0, 3.0, 2.0),
+    )
+    _escrever_conforme(doc)
+    for paragrafo in doc.paragraphs:
+        for run in paragrafo.runs:
+            run.font.name = "Arial"
+            run.font.size = Pt(10)
+    return _salvar(doc, destino)
+
+
+def espaco_exato(destino: Path) -> Path:
+    """Estilo `Normal` 1,5 mas todos os parágrafos com espaçamento exato de 18 pt.
+
+    `w:lineRule="exact"` não é múltiplo comparável com 1,5 linha: a checagem
+    `espacamento` precisa responder NAO_VERIFICAVEL (motivo documento), nunca PASS.
+    """
+    doc = _documento(
+        fonte="Times New Roman",
+        tamanho=12,
+        espaco=1.5,
+        margens_cm=(3.0, 2.0, 3.0, 2.0),
+    )
+    _escrever_conforme(doc)
+    for paragrafo in doc.paragraphs:
+        paragrafo.paragraph_format.line_spacing = Pt(18)
+    return _salvar(doc, destino)
 
 
 def fora_de_norma(destino: Path) -> Path:
@@ -221,6 +269,8 @@ def construir(destino: str | Path = GERADOS_PADRAO) -> dict[str, Path]:
         "conforme": conforme(destino / "conforme.docx"),
         "fora_de_norma": fora_de_norma(destino / "fora_de_norma.docx"),
         "fragmento": fragmento(destino / "fragmento.docx"),
+        "direto_10pt": direto_10pt(destino / "direto_10pt.docx"),
+        "espaco_exato": espaco_exato(destino / "espaco_exato.docx"),
     }
 
 

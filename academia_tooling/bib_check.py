@@ -130,22 +130,30 @@ def auditar(
                 )
             )
 
-    # título normalizado duplicado (quando não já pego pelo DOI)
+    # título normalizado duplicado (quando o DOI não já denuncia o par)
     por_titulo: dict[str, list[Entrada]] = defaultdict(list)
     for entrada in entradas:
         titulo = chave_titulo(entrada.campo("title"))
         if len(titulo) >= 8:
             por_titulo[titulo].append(entrada)
     for _, repetidas in sorted(por_titulo.items()):
-        if len(repetidas) > 1 and len({e.doi() for e in repetidas}) > 1:
-            relatorio.achados.append(
-                Achado(
-                    ERRO,
-                    "titulo_duplicado",
-                    tuple(e.chave for e in repetidas),
-                    f"mesmo título normalizado: {achatar(repetidas[0].campo('title'), 70)}",
-                )
+        if len(repetidas) < 2:
+            continue
+        # O grupo já está coberto por `doi_duplicado` quando TODAS as entradas
+        # compartilham o mesmo DOI não vazio. Antes, `len({doi}) > 1` deixava
+        # passar o caso comum: duas entradas sem DOI ({""}, tamanho 1).
+        dois = {e.doi() for e in repetidas}
+        ja_pego_por_doi = len(dois) == 1 and "" not in dois
+        if ja_pego_por_doi:
+            continue
+        relatorio.achados.append(
+            Achado(
+                ERRO,
+                "titulo_duplicado",
+                tuple(e.chave for e in repetidas),
+                f"mesmo título normalizado: {achatar(repetidas[0].campo('title'), 70)}",
             )
+        )
 
     # campos obrigatórios por tipo, ano e identificador
     for entrada in entradas:

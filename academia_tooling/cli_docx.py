@@ -17,8 +17,9 @@ def construir_parser() -> argparse.ArgumentParser:
         prog="check_docx.py",
         description="Laudo de conformidade de manuscrito .docx contra uma norma (ABNT/REGN/RBCS).",
         epilog=(
-            "Códigos de saída: 0 = nenhum FAIL; 1 = há FAIL; 2 = erro de uso/norma; "
-            "3 = --estrito e alguma checagem NAO_VERIFICAVEL."
+            "Códigos de saída: 0 = nenhum FAIL e nada ficou sem verificar; 1 = há FAIL; "
+            "2 = erro de uso/norma; 3 = alguma checagem não pôde verificar o DOCUMENTO "
+            "(ou qualquer NAO_VERIFICAVEL com --estrito)."
         ),
     )
     parser.add_argument("--arquivo", required=True, type=Path, help="manuscrito .docx")
