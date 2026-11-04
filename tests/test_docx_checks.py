@@ -49,7 +49,10 @@ CASOS: list[tuple[str, object, dict, str, bool, str]] = [
     # ---- espaçamento
     ("espacamento", checar_espacamento, {"espacamento_linhas": 1.5}, "conforme", False, PASS),
     ("espacamento", checar_espacamento, {"espacamento_linhas": 1.5}, "fora_de_norma", False, FAIL),
-    ("espacamento", checar_espacamento, {"espacamento_linhas": 1.5}, "fragmento", False, NAO_VERIFICAVEL),
+    # nada declarado em nível nenhum: o efetivo é o default da aplicação (1,0),
+    # que não atende a 1,5 — reprova pelo default, não fica "não verificável"
+    ("espacamento", checar_espacamento, {"espacamento_linhas": 1.5}, "fragmento", False, FAIL),
+    ("espacamento", checar_espacamento, {"espacamento_linhas": 1.5}, "sem_setup", False, FAIL),
     ("espacamento", checar_espacamento, {"espacamento_linhas": None}, "conforme", False, NAO_VERIFICAVEL),
     # Normal 1,5 mas parágrafos com espaçamento exato (18 pt): não é múltiplo comparável
     ("espacamento", checar_espacamento, {"espacamento_linhas": 1.5}, "espaco_exato", False, NAO_VERIFICAVEL),
@@ -57,10 +60,15 @@ CASOS: list[tuple[str, object, dict, str, bool, str]] = [
     ("margens", checar_margens, {"margens_cm": MARGENS_ABNT}, "conforme", False, PASS),
     ("margens", checar_margens, {"margens_cm": MARGENS_ABNT}, "fora_de_norma", False, FAIL),
     ("margens", checar_margens, {"margens_cm": None}, "conforme", False, NAO_VERIFICAVEL),
+    # .docx sem w:sectPr: não declara margem alguma → default de 2,54 cm reprova
+    ("margens", checar_margens, {"margens_cm": MARGENS_ABNT}, "sem_setup", False, FAIL),
     # ---- seções obrigatórias
     ("secoes", checar_secoes, {"secoes_obrigatorias": SECOES_ABNT}, "conforme", False, PASS),
     ("secoes", checar_secoes, {"secoes_obrigatorias": SECOES_ABNT}, "fora_de_norma", False, FAIL),
     ("secoes", checar_secoes, {"secoes_obrigatorias": SECOES_ABNT}, "fragmento", False, NAO_VERIFICAVEL),
+    # resumo existe como rótulo em negrito, sem título de seção: forma reprova,
+    # existência não pode ser negada
+    ("secoes", checar_secoes, {"secoes_obrigatorias": SECOES_ABNT}, "resumo_rotulo", False, FAIL),
     ("secoes", checar_secoes, {"secoes_obrigatorias": None}, "conforme", False, NAO_VERIFICAVEL),
     # ---- contagem de palavras
     (
@@ -89,6 +97,16 @@ CASOS: list[tuple[str, object, dict, str, bool, str]] = [
     ("referencias", checar_referencias, {"secoes_obrigatorias": SECOES_ABNT}, "fora_de_norma", False, FAIL),
     # a norma exige referências e o documento não tem nenhuma entrada nem citação
     ("referencias", checar_referencias, {"secoes_obrigatorias": SECOES_ABNT}, "fragmento", False, FAIL),
+    # chamada de dois autores (narrativa, parentética e só o segundo): a entrada
+    # existe e nenhum dos dois pode virar "não citado"
+    (
+        "referencias",
+        checar_referencias,
+        {"secoes_obrigatorias": SECOES_ABNT},
+        "citacao_dois_autores",
+        False,
+        PASS,
+    ),
     ("referencias", checar_referencias, {"secoes_obrigatorias": None}, "conforme", False, NAO_VERIFICAVEL),
 ]
 
@@ -335,3 +353,177 @@ def test_referencias_sem_entrada_nem_citacao_reprova(tmp_path, norma_factory):
     assert resultado.status == FAIL, resultado.mensagem
     assert resultado.detalhes["provavel_fragmento"] is True
     assert resultado.detalhes["entradas"] == 0 and resultado.detalhes["citacoes"] == 0
+
+
+# -------------------- t_516daa8a: FAIL falso (resumo ausente, dois autores, setup)
+
+
+def test_secoes_nao_diz_ausente_quando_o_resumo_e_rotulo_no_corpo(docx, norma_factory):
+    """O resumo existe (rótulo em negrito); o que falta é o título de seção.
+
+    Dizer "ausentes: resumo" manda reescrever o que está certo.
+    """
+    from docx import Document
+
+    resultado = checar_secoes(
+        Document(str(docx["resumo_rotulo"])), norma_factory(secoes_obrigatorias=SECOES_ABNT)
+    )
+    assert resultado.status == FAIL, resultado.mensagem
+    assert resultado.detalhes["faltando"] == [], resultado.detalhes
+    assert "resumo" in resultado.detalhes["rotulos_sem_titulo"], resultado.detalhes
+    assert "ausente" not in resultado.mensagem, resultado.mensagem
+    assert "sem título de seção" in resultado.mensagem
+    assert "rótulo" in resultado.mensagem
+
+
+def test_secoes_continua_dizendo_ausente_quando_o_elemento_nao_existe(docx, norma_factory):
+    """A correção não pode esconder ausência real: sem resumo, "ausentes: resumo"."""
+    from docx import Document
+
+    resultado = checar_secoes(
+        Document(str(docx["fora_de_norma"])), norma_factory(secoes_obrigatorias=SECOES_ABNT)
+    )
+    assert resultado.status == FAIL
+    assert resultado.detalhes["faltando"] == ["resumo"], resultado.detalhes
+    assert resultado.detalhes["rotulos_sem_titulo"] == {}
+    assert "ausentes: resumo" in resultado.mensagem
+
+
+def test_secoes_reconhece_rotulo_em_paragrafo_comum_sem_negrito(tmp_path, norma_factory):
+    """"Resumo. <texto>" em parágrafo comum, sem negrito: é rótulo, não ausência."""
+    from docx import Document
+
+    caminho = fixtures.montar(
+        tmp_path / "resumo_sem_negrito.docx",
+        [
+            "Título do manuscrito em parágrafo comum",
+            "Resumo. O artigo examina um objeto qualquer e argumenta que ele importa.",
+            "Corpo do artigo cita (SILVA, 2020).",
+            "Referências",
+            "SILVA, João. Um artigo. Revista, 2020.",
+        ],
+    )
+    resultado = checar_secoes(Document(str(caminho)), norma_factory(secoes_obrigatorias=SECOES_ABNT))
+    assert resultado.status == FAIL
+    assert resultado.detalhes["faltando"] == []
+    assert "resumo" in resultado.detalhes["rotulos_sem_titulo"]
+
+
+def test_extrair_chamadas_preserva_todos_os_autores_de_cada_chamada():
+    from academia_tooling.docx_check import extrair_chamadas
+
+    texto = (
+        "Silva e Souza (2024) discutem o tema. Também aparece em (SILVA; SOUZA, 2024), "
+        "em (SILVA e SOUZA, 2023), em Silva, Souza e Lima (2023) e em Silva et al. (2022)."
+    )
+    nomes = [set(chamada.nomes) for chamada in extrair_chamadas(texto)]
+    assert {"silva", "souza"} in nomes, nomes  # narrativa de dois autores
+    assert {"silva", "souza"} in nomes
+    assert {"silva", "souza", "lima"} in nomes, nomes  # três autores na narrativa
+    assert {"silva"} in nomes, nomes  # et al. casa pelo primeiro autor
+
+
+def test_referencias_casa_chamada_de_dois_autores_em_todas_as_formas(docx, norma_factory):
+    """Chamada dupla não pode virar "citação sem entrada" + autor "não citado"."""
+    from docx import Document
+
+    resultado = checar_referencias(
+        Document(str(docx["citacao_dois_autores"])), norma_factory(secoes_obrigatorias=SECOES_ABNT)
+    )
+    assert resultado.status == PASS, resultado.mensagem
+    assert resultado.detalhes["citacoes_sem_entrada"] == [], resultado.detalhes
+    assert resultado.detalhes["entradas_nao_citadas"] == [], resultado.detalhes
+    assert resultado.detalhes["chamadas"] >= 3
+    assert "souza" in resultado.detalhes["sobrenomes_na_bibliografia"]
+
+
+def test_referencias_chamada_so_do_segundo_autor_encontra_a_entrada(tmp_path, norma_factory):
+    from docx import Document
+
+    caminho = fixtures.montar(
+        tmp_path / "so_segundo_autor.docx",
+        [
+            "Título do manuscrito em parágrafo comum",
+            "Resumo",
+            "Resumo curto.",
+            "O argumento é de Souza (2024), que assina o artigo com Silva.",
+            "Referências",
+            "SILVA, Antônio H.; SOUZA, Nélia A. A categoria elástica. Revista, 2024.",
+        ],
+    )
+    resultado = checar_referencias(Document(str(caminho)), norma_factory(secoes_obrigatorias=SECOES_ABNT))
+    assert resultado.status == PASS, resultado.mensagem
+    assert resultado.detalhes["citacoes_sem_entrada"] == [], resultado.detalhes
+    assert resultado.detalhes["entradas_nao_citadas"] == [], resultado.detalhes
+
+
+def test_referencias_ainda_reprova_citacao_realmente_sem_entrada(tmp_path, norma_factory):
+    """A tolerância a dois autores não pode cegar o cruzamento."""
+    from docx import Document
+
+    caminho = fixtures.montar(
+        tmp_path / "citacao_orfa.docx",
+        [
+            "Título do manuscrito em parágrafo comum",
+            "Resumo",
+            "Resumo curto.",
+            "Outro autor sustenta o ponto (LIMA, 2019).",
+            "Referências",
+            "SILVA, Antônio H.; SOUZA, Nélia A. A categoria elástica. Revista, 2024.",
+        ],
+    )
+    resultado = checar_referencias(Document(str(caminho)), norma_factory(secoes_obrigatorias=SECOES_ABNT))
+    assert resultado.status == FAIL
+    assert any("lima" in item for item in resultado.detalhes["citacoes_sem_entrada"]), resultado.detalhes
+    assert resultado.detalhes["entradas_nao_citadas"] == ["silva"], resultado.detalhes
+    assert "sem entrada" in resultado.mensagem
+
+
+def test_fixture_sem_setup_realmente_nao_declara_pagina(docx):
+    """A fixture do D3 reproduz o arquivo medido: nem w:sectPr, nem w:spacing."""
+    import zipfile
+
+    with zipfile.ZipFile(docx["sem_setup"]) as pacote:
+        xml = pacote.read("word/document.xml").decode("utf-8")
+    assert "sectPr" not in xml
+    assert "w:spacing" not in xml
+
+
+def test_margens_sem_setup_de_pagina_diz_qual_e_o_efetivo(docx, norma_factory):
+    """Sem pgMar o efetivo é o default da aplicação — não "não declarada" do verificador."""
+    from docx import Document
+
+    resultado = checar_margens(
+        Document(str(docx["sem_setup"])), norma_factory(margens_cm=MARGENS_ABNT)
+    )
+    assert resultado.status == FAIL, resultado.mensagem
+    assert resultado.detalhes["pagina_sem_setup"] is True
+    assert resultado.detalhes["default_aplicacao_cm"] == 2.54
+    assert "não declara margem alguma" in resultado.mensagem
+    assert "default da aplicação" in resultado.mensagem
+    assert "não declarada" not in resultado.mensagem
+
+
+def test_espacamento_sem_declaracao_reprova_pelo_default_da_aplicacao(docx, norma_factory):
+    from docx import Document
+
+    resultado = checar_espacamento(
+        Document(str(docx["sem_setup"])), norma_factory(espacamento_linhas=1.5)
+    )
+    assert resultado.status == FAIL, resultado.mensagem
+    assert resultado.detalhes["default_aplicacao"] == 1.0
+    assert "não declara espaçamento em nenhum nível" in resultado.mensagem
+    assert "default da aplicação" in resultado.mensagem
+    assert "não é legível" not in resultado.mensagem
+
+
+def test_espacamento_sem_declaracao_nao_inventa_pass_quando_o_default_coincide(docx, norma_factory):
+    """Default 1,0 e norma pedindo 1,0: nada declarado continua não verificado."""
+    from docx import Document
+
+    resultado = checar_espacamento(
+        Document(str(docx["sem_setup"])), norma_factory(espacamento_linhas=1.0)
+    )
+    assert resultado.status == NAO_VERIFICAVEL, resultado.mensagem
+    assert resultado.motivo_nao_verificavel == MOTIVO_DOCUMENTO
+    assert "nada está declarado" in resultado.mensagem

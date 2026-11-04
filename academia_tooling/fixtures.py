@@ -7,7 +7,9 @@ gerador sim, então qualquer checkout reproduz as fixtures com `make fixtures`.
 
 from __future__ import annotations
 
+import re
 import sys
+import zipfile
 from pathlib import Path
 
 from docx import Document
@@ -83,6 +85,58 @@ FRAGMENTO = [
         "citação no formato autor-data, apenas prosa corrida sobre fontes primárias "
         "consultadas em arquivo."
     ),
+]
+
+# Conteúdo inventado neste módulo: os três casos abaixo reproduzem o *padrão*
+# medido em .docx real (card t_516daa8a), sem trazer nenhum arquivo de vault.
+ROTULO_RESUMO = {
+    "titulo": "Boletins oficiais e a gramática da ameaça interna",
+    "resumo": (
+        "O artigo compara chamadas de capa e notas de agência para mostrar como o "
+        "vocabulário securitário migrou para o noticiário oficial entre 2010 e 2020. "
+        "Argumenta-se que a ameaça interna deixou de ser atributo do inimigo e passou "
+        "a ser efeito de enquadramento editorial."
+    ),
+    "palavras_chave": "Palavras-chave: securitização; imprensa oficial; enquadramento",
+    "abstract": (
+        "The article compares front-page calls and agency notes to show how the "
+        "security vocabulary migrated into official news between 2010 and 2020."
+    ),
+    "corpo": [
+        (
+            "A literatura sobre securitização descreve como elites políticas convertem "
+            "temas comuns em questões existenciais. Segundo BOURDIEU (1989), a disputa "
+            "pela legitimidade do discurso organiza o que pode ser dito em cada campo."
+        ),
+    ],
+    "referencias": [
+        "BOURDIEU, Pierre. O poder simbólico. Rio de Janeiro: Bertrand Brasil, 1989.",
+    ],
+}
+
+DOIS_AUTORES = {
+    "titulo": "A categoria elástica: notas sobre um conceito em disputa",
+    "resumo": "Resumo curto do artigo sobre a categoria em disputa.",
+    "corpo": [
+        (
+            "Silva e Souza (2024) sustentaram que a categoria é elástica e se reorganiza "
+            "a cada ciclo de política externa. A crítica reaparece em (SILVA; SOUZA, 2024) "
+            "e em Souza (2024), sempre com o mesmo argumento."
+        ),
+    ],
+    "referencias": [
+        "SILVA, Antônio H.; SOUZA, Nélia A. A categoria elástica: notas sobre um conceito "
+        "em disputa. Revista de Estudos Sociais, 2024.",
+    ],
+}
+
+SEM_SETUP = [
+    "Título do manuscrito sem setup de página",
+    "Resumo",
+    "Resumo curto do artigo sem declaração de página.",
+    "Corpo com citação (SILVA, 2020) e nada de formatação de página.",
+    "Referências",
+    "SILVA, João. Um artigo. Revista de Estudos, 2020.",
 ]
 
 
@@ -234,6 +288,88 @@ def fragmento(destino: Path) -> Path:
     return destino
 
 
+def _remover_setup_de_pagina(caminho: Path) -> None:
+    """Reescreve o .docx sem `w:sectPr` — o arquivo deixa de declarar página.
+
+    `python-docx` sempre grava um `sectPr` do template; para reproduzir o .docx
+    real (D3), que não carrega setup de página nenhum, o XML é filtrado no zip.
+    """
+    with zipfile.ZipFile(caminho) as origem:
+        itens = [(item, origem.read(item.filename)) for item in origem.infolist()]
+    with zipfile.ZipFile(caminho, "w", zipfile.ZIP_DEFLATED) as saida:
+        for item, dados in itens:
+            if item.filename == "word/document.xml":
+                xml = dados.decode("utf-8")
+                dados = re.sub(r"<w:sectPr\b[^>]*>.*?</w:sectPr>|<w:sectPr\b[^>]*/>", "", xml, flags=re.S).encode(
+                    "utf-8"
+                )
+            saida.writestr(item, dados)
+
+
+def resumo_rotulo(destino: Path) -> Path:
+    """Resumo e abstract escritos como rótulo em negrito no corpo, sem título.
+
+    Padrão medido no .docx real (t_516daa8a/D1): o resumo existe e não há `Heading`
+    para ele. `secoes` tem de dizer "presente sem título de seção", nunca "ausente".
+    """
+    doc = _documento(
+        fonte="Times New Roman", tamanho=12, espaco=1.5, margens_cm=(3.0, 2.0, 3.0, 2.0)
+    )
+    doc.add_paragraph(ROTULO_RESUMO["titulo"])
+    for rotulo, corpo in (
+        ("Resumo. ", ROTULO_RESUMO["resumo"]),
+        ("Abstract. ", ROTULO_RESUMO["abstract"]),
+    ):
+        paragrafo = doc.add_paragraph()
+        destaque = paragrafo.add_run(rotulo)
+        destaque.bold = True
+        paragrafo.add_run(corpo)
+    doc.add_paragraph(ROTULO_RESUMO["palavras_chave"])
+    for trecho in ROTULO_RESUMO["corpo"]:
+        doc.add_paragraph(trecho)
+    doc.add_paragraph("Referências")
+    for entrada in ROTULO_RESUMO["referencias"]:
+        doc.add_paragraph(entrada)
+    return _salvar(doc, destino)
+
+
+def citacao_dois_autores(destino: Path) -> Path:
+    """Chamadas de dois autores: narrativa, parentética e só o segundo autor.
+
+    Padrão medido no .docx real (D2): "Silva e Souza (2024)" era lida como
+    "souza", a entrada sumia e o primeiro autor virava "não citado" — dois FAIL
+    de sentido oposto no mesmo cruzamento.
+    """
+    doc = _documento(
+        fonte="Times New Roman", tamanho=12, espaco=1.5, margens_cm=(3.0, 2.0, 3.0, 2.0)
+    )
+    doc.add_paragraph(DOIS_AUTORES["titulo"])
+    doc.add_paragraph("Resumo")
+    doc.add_paragraph(DOIS_AUTORES["resumo"])
+    for trecho in DOIS_AUTORES["corpo"]:
+        doc.add_paragraph(trecho)
+    doc.add_paragraph("Referências")
+    for entrada in DOIS_AUTORES["referencias"]:
+        doc.add_paragraph(entrada)
+    return _salvar(doc, destino)
+
+
+def sem_setup(destino: Path) -> Path:
+    """`.docx` sem `w:sectPr` e sem `w:spacing`: não carrega setup de página.
+
+    Padrão medido no .docx real (D3): sem margem e sem espaçamento declarados, o
+    efetivo é o default da aplicação (2,54 cm nos quatro lados; espaço simples).
+    `margens` e `espacamento` têm de dizer isso — e reprovar o que não atende.
+    """
+    doc = _documento(fonte="Times New Roman", tamanho=12, margens_cm=None)
+    _apagar_declaracoes(doc)
+    for linha in SEM_SETUP:
+        doc.add_paragraph(linha)
+    caminho = _salvar(doc, destino)
+    _remover_setup_de_pagina(caminho)
+    return caminho
+
+
 def montar(
     destino: str | Path,
     linhas: list[str],
@@ -271,6 +407,9 @@ def construir(destino: str | Path = GERADOS_PADRAO) -> dict[str, Path]:
         "fragmento": fragmento(destino / "fragmento.docx"),
         "direto_10pt": direto_10pt(destino / "direto_10pt.docx"),
         "espaco_exato": espaco_exato(destino / "espaco_exato.docx"),
+        "resumo_rotulo": resumo_rotulo(destino / "resumo_rotulo.docx"),
+        "citacao_dois_autores": citacao_dois_autores(destino / "citacao_dois_autores.docx"),
+        "sem_setup": sem_setup(destino / "sem_setup.docx"),
     }
 
 

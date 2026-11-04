@@ -104,12 +104,12 @@ status é `FAIL` com a contagem no veredito — `PASS` não convive com desvio m
 |---|---|
 | `fonte_familia` | família efetiva de cada run do corpo (direta ou herdada do `Normal`/`docDefaults`), comparada sem acento/caixa; > 10 % fora das permitidas → `FAIL` |
 | `fonte_tamanho` | tamanho efetivo de cada run (direto ou herdado); > 10 % fora do corpo exigido → `FAIL` com "N/M runs fora do padrão" |
-| `espacamento` | `w:spacing` de cada parágrafo (herança de estilo/`docDefaults`); > 10 % dos parágrafos fora do múltiplo exigido → `FAIL`. Espaçamento **exato** (`w:lineRule="exact"`/`atLeast`) não é múltiplo comparável → `NAO_VERIFICAVEL` (motivo `documento`), nunca `PASS` |
-| `margens` | `section.top/bottom/left/right_margin` em cm, tolerância 0,08 cm (arredondamento twips) |
-| `secoes` | cabeçalhos reconhecidos por regex (Resumo/Abstract/Referências/seções numeradas); título = primeira linha curta sem ponto final |
+| `espacamento` | `w:spacing` de cada parágrafo (herança de estilo/`docDefaults`); > 10 % dos parágrafos fora do múltiplo exigido → `FAIL`. Espaçamento **exato** (`w:lineRule="exact"`/`atLeast`) não é múltiplo comparável → `NAO_VERIFICAVEL` (motivo `documento`), nunca `PASS`. Sem `w:spacing` em nível nenhum, o efetivo é o default da aplicação (espaço simples): atende → `NAO_VERIFICAVEL`, não atende → `FAIL` |
+| `margens` | `section.top/bottom/left/right_margin` em cm, tolerância 0,08 cm (arredondamento twips). Sem `w:pgMar` (nem `w:sectPr`), o efetivo é o default da aplicação (2,54 cm nos quatro lados): atende → `NAO_VERIFICAVEL`, não atende → `FAIL` com o motivo escrito |
+| `secoes` | cabeçalhos reconhecidos por regex (Resumo/Abstract/Referências/seções numeradas); título = primeira linha curta sem ponto final. Elemento escrito como **rótulo no corpo** ("Resumo. O artigo…", "Palavras-chave: …") conta como **presente sem título de seção** — `FAIL` de forma, nunca "ausente" |
 | `palavras` | contagem por token, total e por seção; respeita `contagem_exclui_referencias` |
 | `autor_metadado` | `core_properties.author` e `last_modified_by` contra marcadores de anonimização |
-| `referencias` | extrai `(SOBRENOME, ano)` e `Sobrenome (ano)` do corpo e casa com os sobrenomes/anos do bloco final; sem **nenhuma** entrada nem citação, a norma que exige referências reprova (`FAIL`) |
+| `referencias` | extrai chamadas autor-data (`(SILVA; SOUZA, 2024)`, `Silva e Souza (2024)`, `Silva et al. (2024)`) e casa **qualquer** sobrenome da chamada com **qualquer** autor das entradas; "não citada" só quando nenhuma chamada casar. Sem **nenhuma** entrada nem citação, a norma que exige referências reprova (`FAIL`) |
 
 ### O que **não** é coberto
 
@@ -120,8 +120,10 @@ status é `FAIL` com a contagem no veredito — `PASS` não convive com desvio m
 * **Citações em nota de rodapé / sistema numérico**: não lidas. Manuscrito que tem
   referências mas nenhuma citação autor-data cai em `NAO_VERIFICAVEL` (motivo `documento`)
   na checagem `referencias` — de propósito; sem referências **e** sem citações, é `FAIL`.
-* **Herança de tema**: `python-docx` não resolve `theme1.xml`. Fonte/espaçamento definidos
-  só no tema aparecem como `nada declarado` → `NAO_VERIFICAVEL` (motivo `documento`, exit 3).
+* **Herança de tema**: `python-docx` não resolve `theme1.xml`. Fonte definida só no tema
+  aparece como `nada declarado` → `NAO_VERIFICAVEL` (motivo `documento`, exit 3). Margem e
+  espaçamento **não** são tema: quando o arquivo não declara nenhum dos dois, o efetivo é
+  o default da aplicação (2,54 cm; espaço simples) e a checagem reprova se ele não atende.
 * **Espaçamento misto**: se uma minoria de parágrafos (< 10 %) usa espaçamento exato, o
   veredito `PASS` aparece com a contagem no rodapé; o texto exato em si não é medido.
 * **Texto fora de `doc.paragraphs`**: tabelas, cabeçalho/rodapé, notas de rodapé, caixas de
@@ -143,13 +145,25 @@ status é `FAIL` com a contagem no veredito — `PASS` não convive com desvio m
     casando com a bibliografia, metadado de autor vazio;
   * `fora_de_norma.docx` — Arial 10, espaço simples, margem 1 cm, sem Resumo, autor exposto,
     citação (`CHALMERS, 1993`) sem entrada;
+  * `direto_10pt.docx` — `Normal` 12 pt com o corpo inteiro em 10 pt Arial por formatação
+    direta: `PASS` por estatística não é aceitável, o veredito é `FAIL`;
+  * `espaco_exato.docx` — `Normal` 1,5 com todo parágrafo em espaçamento exato de 18 pt:
+    `NAO_VERIFICAVEL` (não é múltiplo comparável), nunca `PASS`;
   * `fragmento.docx` — trecho sem cabeçalho, sem citação e **sem** declaração de fonte/
-    espaçamento (prova do caminho `NAO_VERIFICAVEL`).
+    espaçamento (prova do caminho `NAO_VERIFICAVEL` de fonte e do `FAIL` por default de
+    espaçamento);
+  * `resumo_rotulo.docx` — resumo/abstract como **rótulo em negrito** no corpo, sem título
+    de seção: o elemento existe, `secoes` reprova a forma e não diz "ausente";
+  * `citacao_dois_autores.docx` — `Silva e Souza (2024)`, `(SILVA; SOUZA, 2024)` e
+    `Souza (2024)` contra uma entrada de dois autores: nada de "citação sem entrada" nem de
+    "não citada";
+  * `sem_setup.docx` — `.docx` sem `w:sectPr` e sem `w:spacing`: `margens` e `espacamento`
+    dizem qual é o default da aplicação e reprovam o que não atende.
 * **versionadas**: `bib_ok.bib` + `texto_ok.tex`, `bib_com_problemas.bib` +
   `texto_problemas.tex` (duplicata por DOI, duplicata por título normalizado, `@book` sem
   `publisher`, ano 2099, entrada sem ano, sem DOI/URL, chave não citada, citação sem entrada).
 
-A suíte (`pytest -q`, 94 testes) exige os **três estados para cada uma das 8 checagens**:
+A suíte (`pytest -q`, 127 testes) exige os **três estados para cada uma das 8 checagens**:
 `test_toda_checagem_tem_os_tres_estados` reprova se alguém adicionar checagem sem caso
 negativo — checagem que nunca falha não é checagem.
 

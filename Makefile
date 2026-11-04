@@ -14,7 +14,9 @@ test: fixtures
 	$(PY) -m pytest -q
 
 # Laudo dos fixtures de aceite: um conforme, um fora de norma, um fragmento, o caso
-# de formatação direta (10 pt em todos os runs → FAIL) e o .bib.
+# de formatação direta (10 pt em todos os runs → FAIL), o espaçamento exato, os três
+# padrões medidos em .docx real no t_516daa8a (resumo como rótulo, chamada de dois
+# autores, .docx sem setup de página) e o .bib.
 laudo: fixtures
 	@echo
 	$(PY) check_docx.py --arquivo $(FIX)/conforme.docx --norma abnt; echo "exit $$?"
@@ -26,6 +28,12 @@ laudo: fixtures
 	$(PY) check_docx.py --arquivo $(FIX)/direto_10pt.docx --norma abnt; echo "exit $$?"
 	@echo
 	$(PY) check_docx.py --arquivo $(FIX)/espaco_exato.docx --norma abnt; echo "exit $$?"
+	@echo
+	$(PY) check_docx.py --arquivo $(FIX)/resumo_rotulo.docx --norma abnt; echo "exit $$?"
+	@echo
+	$(PY) check_docx.py --arquivo $(FIX)/citacao_dois_autores.docx --norma abnt; echo "exit $$?"
+	@echo
+	$(PY) check_docx.py --arquivo $(FIX)/sem_setup.docx --norma abnt; echo "exit $$?"
 	@echo
 	$(PY) check_bib.py --bib tests/fixtures/bib_com_problemas.bib --texto tests/fixtures/texto_problemas.tex; echo "exit $$?"
 
