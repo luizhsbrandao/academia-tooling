@@ -139,6 +139,125 @@ SEM_SETUP = [
     "SILVA, João. Um artigo. Revista de Estudos, 2020.",
 ]
 
+# Os seis casos abaixo reproduzem o *padrão* de uma checagem de referências que
+# acusou 10 vezes sem razão (card t_7c691dbc), medida então em manuscrito ABNT
+# real: nada de vault aqui, as entradas e chamadas são inventadas neste módulo.
+# Cada um isola uma causa — data de acesso, DOI, apud, título em prosa, autor com
+# duas obras — e o caso sem entrada fecha a trava do verdadeiro positivo.
+REFERENCIAS_ACESSO = {
+    "titulo": "Operações de informação e a gramática da ameaça",
+    "corpo": [
+        (
+            "A circulação coordenada foi descrita por BOSWINKEL et al. (2022) a partir "
+            "de um corpus de canais fechados. KYRYCHOK et al. (2017) mediram o mesmo "
+            "efeito em fóruns, e MENN (2025) ampliou o escopo para plataformas de vídeo. "
+            "HSIAO (2018) já apontava o custo da moderação, enquanto a NATO (2009) "
+            "documentava a doutrina então vigente. O diagnóstico se repete em "
+            "(BOSWINKEL et al., 2022) e em (HSIAO, 2018)."
+        ),
+    ],
+    "referencias": [
+        "BOSWINKEL, H. et al. Coordinated behavior in closed channels: a fieldwork "
+        "report. Journal of Information Operations, v. 12, n. 2, p. 44-67, abr. 2022. "
+        "Disponível em: https://exemplo.invalid/artigo/2291. Acesso em: 11 maio 2026.",
+        "KYRYCHOK, O. et al. Narratives in moderated forums. Journal of Media Studies, "
+        "v. 3, n. 1, p. 8-21, 2017. Disponível em: https://exemplo.invalid/artigo/331. "
+        "Acesso em: 11 maio 2026.",
+        "MENN, J. Video platforms and attention capture. Journal of Digital Politics, "
+        "v. 8, n. 4, 2025. Disponível em: https://exemplo.invalid/artigo/412. "
+        "Acesso em: 2 fev. 2026.",
+        "HSIAO, Y. The cost of moderation. Internet Policy Review, v. 7, n. 2, 2018. "
+        "Disponível em: https://exemplo.invalid/artigo/512. Acesso em: 14 jan. 2026.",
+        "NATO. Strategic communication doctrine. Bruxelas: NATO, 2009. Disponível em: "
+        "https://exemplo.invalid/doc/1. Acesso em: 4 mar. 2026.",
+    ],
+}
+
+REFERENCIAS_DOI = {
+    "titulo": "Recomendação algorítmica e reforma regulatória",
+    "corpo": [
+        (
+            "A reforma da recomendação algorítmica é descrita em (CHEN, 2026) e retomada "
+            "por CHEN (2026) no mesmo ano, sem alteração de mérito."
+        ),
+    ],
+    "referencias": [
+        "CHEN, Y. Governing algorithmic recommendation: the 2026 reform. Internet Policy "
+        "Review, v. 15, n. 1, 2026. DOI: 10.14763/2026.1.2074. Disponível em: "
+        "https://exemplo.invalid/doi/2074. Acesso em: 3 jun. 2026.",
+    ],
+}
+
+REFERENCIAS_APUD = {
+    "titulo": "Citação de citação e o vocabulário da ameaça",
+    "corpo": [
+        (
+            "A formulação original é de RID (2020, p. 13–14 apud BOSWINKEL et al., 2022, "
+            "p. 5), que a retoma sem alterar o vocabulário. A crítica reaparece em "
+            "(RID, 2020, p. 13–14 apud BOSWINKEL et al., 2022, p. 5), sempre com o mesmo "
+            "argumento."
+        ),
+    ],
+    "referencias": [
+        "BOSWINKEL, H. et al. Coordinated behavior in closed channels: a fieldwork "
+        "report. Journal of Information Operations, v. 12, n. 2, p. 44-67, abr. 2022. "
+        "Disponível em: https://exemplo.invalid/artigo/2291. Acesso em: 11 maio 2026.",
+    ],
+}
+
+REFERENCIAS_TITULO_PROSA = {
+    "titulo": "Estereótipos, propaganda e opinião pública",
+    "corpo": [
+        (
+            "Em Propaganda (1928), Lippmann descrevera a fabricação do consentimento como "
+            "rotina de governo. A tese reaparece em (HAN, 2017) e, como Lippmann escrevera "
+            "em Public Opinion (1922), o estereótipo antecede o juízo. O argumento está em "
+            "(LIPPMANN, 1922) e em (LIPPMANN, 1928)."
+        ),
+    ],
+    "referencias": [
+        "LIPPMANN, Walter. Propaganda. Nova York: Harcourt, 1928.",
+        "LIPPMANN, Walter. Public opinion. Nova York: Harcourt, 1922.",
+        "HAN, Byung-Chul. A sociedade do cansaço. Petrópolis: Vozes, 2017.",
+    ],
+}
+
+REFERENCIAS_AUTOR_REPETIDO = {
+    "titulo": "Vigilância, transparência e o sujeito da suspeita",
+    "corpo": [
+        (
+            "FOUCAULT (2001) descreve o panóptico; a formulação posterior (FOUCAULT, 2014) "
+            "a desloca para a governamentalidade. HAN (2017) diagnostica a sociedade do "
+            "cansaço, e HAN (2022) nomeia a infocracia."
+        ),
+    ],
+    "referencias": [
+        "FOUCAULT, Michel. Vigiar e punir: nascimento da prisão. 22. ed. Petrópolis: "
+        "Vozes, 2001.",
+        "FOUCAULT, Michel. Do governo dos vivos: curso no Collège de France. São Paulo: "
+        "Martins Fontes, 2014.",
+        "HAN, Byung-Chul. A sociedade do cansaço. Petrópolis: Vozes, 2017.",
+        "HAN, Byung-Chul. Infocracia: digitalização e a crise da democracia. Petrópolis: "
+        "Vozes, 2022.",
+    ],
+}
+
+# Trava do verdadeiro positivo: chamada autor-data SEM entrada tem de continuar
+# reprovando, senão o conserto dos falsos positivos vira aprovação por omissão.
+REFERENCIAS_SEM_ENTRADA = {
+    "titulo": "Doutrina, norma e o vocabulário da ameaça",
+    "corpo": [
+        (
+            "O documento de referência (EGN/PPGEM, 2026) fixa o vocabulário da ameaça "
+            "híbrida. A leitura crítica aparece em (Klein, 2020), que discorda do "
+            "enquadramento. O restante do argumento segue (FOUCAULT, 1979)."
+        ),
+    ],
+    "referencias": [
+        "FOUCAULT, Michel. Vigiar e punir: nascimento da prisão. Petrópolis: Vozes, 1979.",
+    ],
+}
+
 
 def _documento(
     *,
@@ -370,6 +489,57 @@ def sem_setup(destino: Path) -> Path:
     return caminho
 
 
+def _artigo(destino: Path, dados: dict) -> Path:
+    """Artigo mínimo (título, resumo, corpo, referências) a partir de um dict."""
+    doc = _documento(
+        fonte="Times New Roman", tamanho=12, espaco=1.5, margens_cm=(3.0, 2.0, 3.0, 2.0)
+    )
+    doc.add_paragraph(dados["titulo"])
+    doc.add_paragraph("Resumo")
+    doc.add_paragraph(dados.get("resumo", "Resumo curto do artigo usado na fixture."))
+    for trecho in dados["corpo"]:
+        doc.add_paragraph(trecho)
+    doc.add_paragraph("Referências")
+    for entrada in dados["referencias"]:
+        doc.add_paragraph(entrada)
+    return _salvar(doc, destino)
+
+
+def referencias_acesso(destino: Path) -> Path:
+    """Referências online com `Acesso em: … 2026` (F1 do t_7c691dbc).
+
+    O último ano da entrada é o do acesso, não o de publicação: cinco chamadas
+    certas (BOSWINKEL 2022, KYRYCHOK 2017, MENN 2025, HSIAO 2018, NATO 2009)
+    viravam "ano divergente" por isso.
+    """
+    return _artigo(destino, REFERENCIAS_ACESSO)
+
+
+def referencias_doi(destino: Path) -> Path:
+    """DOI com ano no sufixo (`10.14763/2026.1.2074`) não é ano de publicação (F2)."""
+    return _artigo(destino, REFERENCIAS_DOI)
+
+
+def referencias_apud(destino: Path) -> Path:
+    """Chamada com *apud*: só a obra consultada entra nas referências (F3)."""
+    return _artigo(destino, REFERENCIAS_APUD)
+
+
+def referencias_titulo_prosa(destino: Path) -> Path:
+    """Título de obra em prosa ("Em Propaganda (1928)") não é chamada autor-data (F4/F6)."""
+    return _artigo(destino, REFERENCIAS_TITULO_PROSA)
+
+
+def referencias_autor_repetido(destino: Path) -> Path:
+    """Duas entradas do mesmo sobrenome (FOUCAULT 2001/2014, HAN 2017/2022) (F5)."""
+    return _artigo(destino, REFERENCIAS_AUTOR_REPETIDO)
+
+
+def referencias_sem_entrada(destino: Path) -> Path:
+    """Chamada autor-data sem entrada — o FAIL verdadeiro que não pode sumir."""
+    return _artigo(destino, REFERENCIAS_SEM_ENTRADA)
+
+
 def montar(
     destino: str | Path,
     linhas: list[str],
@@ -410,6 +580,18 @@ def construir(destino: str | Path = GERADOS_PADRAO) -> dict[str, Path]:
         "resumo_rotulo": resumo_rotulo(destino / "resumo_rotulo.docx"),
         "citacao_dois_autores": citacao_dois_autores(destino / "citacao_dois_autores.docx"),
         "sem_setup": sem_setup(destino / "sem_setup.docx"),
+        "referencias_acesso": referencias_acesso(destino / "referencias_acesso.docx"),
+        "referencias_doi": referencias_doi(destino / "referencias_doi.docx"),
+        "referencias_apud": referencias_apud(destino / "referencias_apud.docx"),
+        "referencias_titulo_prosa": referencias_titulo_prosa(
+            destino / "referencias_titulo_prosa.docx"
+        ),
+        "referencias_autor_repetido": referencias_autor_repetido(
+            destino / "referencias_autor_repetido.docx"
+        ),
+        "referencias_sem_entrada": referencias_sem_entrada(
+            destino / "referencias_sem_entrada.docx"
+        ),
     }
 
 

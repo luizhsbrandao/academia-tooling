@@ -111,6 +111,26 @@ status é `FAIL` com a contagem no veredito — `PASS` não convive com desvio m
 | `autor_metadado` | `core_properties.author` e `last_modified_by` contra marcadores de anonimização |
 | `referencias` | extrai chamadas autor-data (`(SILVA; SOUZA, 2024)`, `Silva e Souza (2024)`, `Silva et al. (2024)`) e casa **qualquer** sobrenome da chamada com **qualquer** autor das entradas; "não citada" só quando nenhuma chamada casar. Sem **nenhuma** entrada nem citação, a norma que exige referências reprova (`FAIL`) |
 
+Quatro decisões de `referencias` que evitam `FAIL` falso (cada uma com fixture própria em
+`tests/`, card `t_7c691dbc`):
+
+* **ano da entrada é conjunto, não o último do texto.** A cauda de acesso (`Disponível em:`/
+  `Acesso em:`) e os identificadores (DOI, ISBN, ISSN, e-locator) saem antes da varredura —
+  em referência online o último ano do texto é o do acesso, e `10.14763/2026.1.2074` tem
+  `2074` no sufixo. Mais de um ano na mesma entrada (edição e reimpressão) é aceito.
+* ***apud* não exige entrada da fonte não consultada.** NBR 10520 (citação de citação):
+  só a obra consultada entra nas referências. Em `(RID, 2020 apud BOSWINKEL et al., 2022)`
+  a única entrada exigida é a de BOSWINKEL, e o ano que vale é o dela.
+* **menção a título de obra em prosa não é chamada.** `Em Propaganda (1928), Lippmann…`
+  não pede entrada de "propaganda": chamada autor-data é sobrenome em caixa alta (NBR
+  10520) ou nome próprio **não** precedido de partícula que introduz título (`em`, `no`,
+  `na`, `nos`, `nas`). As menções reconhecidas aparecem em `mencionadas_como_titulo`, no
+  JSON do laudo — o veredito diz que viu, não que ignorou.
+* **o mesmo sobrenome pode ter várias entradas.** O mapa vai de sobrenome para o
+  **conjunto** de índices: a chamada marca todas as entradas cujo conjunto de anos contém
+  o ano citado (e todas as do sobrenome quando o ano não desambigua). Com uma única
+  entrada por sobrenome, a segunda obra do mesmo autor ficava eternamente "não citada".
+
 ### O que **não** é coberto
 
 * **Formato**: só `.docx`. Não lê `.doc`, `.odt`, `.pdf`, `.rtf`.
@@ -120,6 +140,10 @@ status é `FAIL` com a contagem no veredito — `PASS` não convive com desvio m
 * **Citações em nota de rodapé / sistema numérico**: não lidas. Manuscrito que tem
   referências mas nenhuma citação autor-data cai em `NAO_VERIFICAVEL` (motivo `documento`)
   na checagem `referencias` — de propósito; sem referências **e** sem citações, é `FAIL`.
+* **Chamada em caixa mista precedida de `em/no/na`**: lida como título de obra em prosa e
+  **não** reprova — `em Klein (2020)` sem entrada passa. É o preço de não acusar
+  `Em Propaganda (1928)`; chamada em caixa alta (`(KLEIN, 2020)`, a forma da NBR 10520) e
+  chamada parentética em caixa mista continuam reprovando.
 * **Herança de tema**: `python-docx` não resolve `theme1.xml`. Fonte definida só no tema
   aparece como `nada declarado` → `NAO_VERIFICAVEL` (motivo `documento`, exit 3). Margem e
   espaçamento **não** são tema: quando o arquivo não declara nenhum dos dois, o efetivo é

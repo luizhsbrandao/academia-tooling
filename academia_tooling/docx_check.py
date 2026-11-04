@@ -25,7 +25,14 @@ Antes de acusar ausência, separar existência de forma:
 * `.docx` sem `w:sectPr`/`w:spacing` não é arquivo ilegível: o efetivo é o default
   da aplicação (2,54 cm; espaço simples), e é isso que o laudo tem de dizer;
 * chamada de dois/três autores casa por **qualquer** um dos sobrenomes, contra
-  **qualquer** autor da entrada — senão um erro vira dois FAIL de sentido oposto.
+  **qualquer** autor da entrada — senão um erro vira dois FAIL de sentido oposto;
+* o ano da entrada é o de **publicação**, não o último ano do texto: `Acesso em:` e
+  dígitos de DOI/ISBN/ISSN não datam a obra, e a entrada pode datar duas (edição e
+  reimpressão) — o cruzamento é por conjunto;
+* `apud` (NBR 10520, citação de citação) exige entrada só da obra **consultada** — a
+  fonte de segunda mão não vai para as referências;
+* menção a título de obra em prosa ("Em Propaganda (1928)") não é chamada autor-data e
+  não pede entrada.
 """
 
 from __future__ import annotations
@@ -392,6 +399,18 @@ _RE_GRUPO_SO_ANO = re.compile(
 # "Silva, Souza e Lima", "Silva et al.".
 _RE_CONECTORES_AUTORES = re.compile(r"\s*(?:;|,|\bet\s+al\.?|\be\b|\band\b|&)\s*", re.I)
 _JANELA_NARRATIVA = 80
+_TOKEN_NOME = re.compile(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\u2019\-]+")
+# NBR 10520 (citação de citação): a obra não consultada citada com "apud" NÃO
+# entra na lista de referências — só a consultada. Em "(RID, 2020, p. 13–14 apud
+# BOSWINKEL et al., 2022, p. 5)" a entrada exigida é a de BOSWINKEL, e o ano que
+# vale é o da obra consultada (2022), não o da fonte de segunda mão (2020).
+_RE_APUD = re.compile(r"(?i)\bapud\b")
+# Preposições que, na prosa, introduzem TÍTULO de obra e não sobrenome: "Em
+# Propaganda (1928)", "no Vigiar e Punir (1975)". NBR 10520 só cobra entrada de
+# chamada autor-data; menção a título não é chamada. "de/do/da" ficam de fora de
+# propósito: "a obra de Klein (2020)" é chamada de autor de verdade.
+_PALAVRAS_DE_TITULO = frozenset({"em", "no", "na", "nos", "nas"})
+_JANELA_DO_TITULO = 5
 
 
 @dataclass(frozen=True)
@@ -401,20 +420,70 @@ class Chamada:
     NBR 10520: a chamada reproduz o primeiro elemento da referência e, com dois
     autores, ambos. Guardar só um sobrenome por chamada faz a entrada sumir do
     cruzamento (e aí o outro autor aparece como "não citado").
+
+    `acusaveis` é paralelo a `nomes` e diz se aquele nome serve de prova de
+    "citação sem entrada" (ver `_acusavel`): menção a título de obra em prosa
+    não serve.
     """
 
     nomes: tuple[str, ...]
     ano: int | None
     trecho: str
+    acusaveis: tuple[bool, ...] = ()
 
     def rotulo(self) -> str:
         nomes = " e ".join(self.nomes)
         return f"{nomes} ({self.ano})" if self.ano else nomes
 
+    def pode_acusar(self) -> bool:
+        """Algum nome da chamada prova "citação sem entrada"?"""
+        if len(self.acusaveis) != len(self.nomes):
+            return bool(self.nomes)
+        return any(self.acusaveis)
+
+
+@dataclass(frozen=True)
+class _Nome:
+    """Sobrenome candidato de uma chamada, com a evidência de que é sobrenome."""
+
+    sobrenome: str  # chave normalizada, para o cruzamento
+    forma: str  # como aparece no texto (preserva a caixa)
+    acusavel: bool  # ver `_acusavel`
+
+
+def _introduz_titulo(antes: str) -> bool:
+    """O nome que vem depois de `antes` é título de obra em prosa?
+
+    Volta até `_JANELA_DO_TITULO` palavras pulando as que compõem o próprio
+    título ("em Public **Opinion**": "Public" é parte do título) e responde True
+    se achar uma preposição introdutória de título. É a diferença entre
+    "Em Propaganda (1928)" — título — e "Segundo Lippmann (1922)" — chamada.
+    """
+    palavras = _TOKEN_NOME.findall(antes or "")
+    for palavra in reversed(palavras[-_JANELA_DO_TITULO:]):
+        if chave(palavra) in _PALAVRAS_DE_TITULO:
+            return True
+        if palavra[0].isupper() and palavra.casefold() not in PARTICULAS:
+            continue  # palavra do próprio título: "Public" de "Public Opinion"
+    return False
+
+
+def _acusavel(forma: str, antes: str) -> bool:
+    """Este nome pode ser acusado de "citação sem entrada"?
+
+    Caixa alta é a forma da chamada na NBR 10520 (a chamada reproduz o primeiro
+    elemento da referência, que a ABNT escreve em maiúsculas) e não deixa
+    dúvida. Caixa mista é ambígua — acusá-la sem olhar o contexto manda
+    reescrever título de obra que está certo.
+    """
+    if forma.upper() == forma:
+        return True
+    return not _introduz_titulo(antes)
+
 
 def _sobrenome_do_trecho(trecho: str) -> str | None:
     """Primeiro token 'de nome próprio' do trecho, ignorando partículas."""
-    for token in re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+", trecho):
+    for token in _TOKEN_NOME.findall(trecho):
         if token.casefold() in PARTICULAS or len(token) < 3:
             continue
         if token[0].isupper():
@@ -422,25 +491,30 @@ def _sobrenome_do_trecho(trecho: str) -> str | None:
     return None
 
 
-def _sobrenomes_do_trecho(trecho: str, *, ultimo: bool = False) -> list[str]:
+def _nomes_do_trecho(trecho: str, *, ultimo: bool = False) -> list[_Nome]:
     """Todos os sobrenomes de um trecho de chamada, na ordem em que aparecem.
 
     `ultimo=True` serve ao texto corrido ("a leitura de BOURDIEU (1989)"): o
     sobrenome é o último nome próprio do trecho. No campo entre parênteses
     ("(SILVA; SOUZA, 2024)") cada campo começa pelo sobrenome.
     """
-    nomes: list[str] = []
+    nomes: list[_Nome] = []
     for parte in _RE_CONECTORES_AUTORES.split(trecho or ""):
         tokens = [
-            token
-            for token in re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\-]+", parte)
-            if len(token) >= 3 and token[0].isupper() and token.casefold() not in PARTICULAS
+            casamento
+            for casamento in _TOKEN_NOME.finditer(parte)
+            if len(casamento.group(0)) >= 3
+            and casamento.group(0)[0].isupper()
+            and casamento.group(0).casefold() not in PARTICULAS
         ]
         if not tokens:
             continue
-        nome = chave(tokens[-1] if ultimo else tokens[0])
-        if nome and nome not in nomes:
-            nomes.append(nome)
+        escolhido = tokens[-1] if ultimo else tokens[0]
+        forma = escolhido.group(0)
+        sobrenome = chave(forma)
+        if not sobrenome or any(nome.sobrenome == sobrenome for nome in nomes):
+            continue
+        nomes.append(_Nome(sobrenome, forma, _acusavel(forma, parte[: escolhido.start()])))
     return nomes
 
 
@@ -459,18 +533,25 @@ def _chamada_narrativa(texto: str, casamento: re.Match[str]) -> Chamada | None:
     )
     if corte != -1:
         antes = antes[corte + 1 :]
-    nomes = _sobrenomes_do_trecho(antes, ultimo=True)
+    nomes = _nomes_do_trecho(antes, ultimo=True)
     if not nomes:
         return None
     ano = _RE_ANO.search(casamento.group(1))
-    return Chamada(tuple(nomes), int(ano.group(1)) if ano else None, casamento.group(0))
+    return Chamada(
+        tuple(nome.sobrenome for nome in nomes),
+        int(ano.group(1)) if ano else None,
+        casamento.group(0),
+        tuple(nome.acusavel for nome in nomes),
+    )
 
 
 def extrair_chamadas(texto: str) -> list[Chamada]:
     """Chamadas autor-data do texto, uma por chamada (não por sobrenome).
 
     Reconhece `(SILVA, 2024)`, `(SILVA; SOUZA, 2024)`, `(Silva e Souza, 2024)`,
-    `Silva e Souza (2024)`, `(Silva, Souza e Lima, 2024)` e `Silva et al. (2024)`.
+    `Silva e Souza (2024)`, `(Silva, Souza e Lima, 2024)`, `Silva et al. (2024)`
+    e `(RID, 2020 apud BOSWINKEL et al., 2022)` — neste último só a obra
+    consultada (depois do *apud*) vira chamada.
     """
     chamadas: list[Chamada] = []
     for casamento in _RE_PAREN.finditer(texto):
@@ -484,12 +565,28 @@ def extrair_chamadas(texto: str) -> list[Chamada]:
         if not anos:
             continue
         for i, segmento in enumerate(grupo.split(";")):
-            nomes = _sobrenomes_do_trecho(segmento.split(",")[0])
+            # *apud*: a fonte de segunda mão não entra nas referências, então a
+            # exigência de entrada recomeça depois dele (NBR 10520).
+            apud = _RE_APUD.search(segmento)
+            consultado = segmento[apud.end() :] if apud else segmento
+            nomes = _nomes_do_trecho(consultado.split(",")[0])
             if not nomes:
                 continue
-            anos_do_segmento = [int(a) for a in _RE_ANO.findall(segmento)]
-            ano = anos_do_segmento[0] if anos_do_segmento else anos[min(i, len(anos) - 1)]
-            chamadas.append(Chamada(tuple(nomes), ano, casamento.group(0)))
+            anos_do_segmento = [int(a) for a in _RE_ANO.findall(consultado)]
+            if anos_do_segmento:
+                ano = anos_do_segmento[0]
+            elif apud:
+                ano = None  # o ano antes do apud é da obra não consultada
+            else:
+                ano = anos[min(i, len(anos) - 1)]
+            chamadas.append(
+                Chamada(
+                    tuple(nome.sobrenome for nome in nomes),
+                    ano,
+                    casamento.group(0),
+                    tuple(nome.acusavel for nome in nomes),
+                )
+            )
     return chamadas
 
 
@@ -526,9 +623,32 @@ def _autores_da_entrada(entrada: str) -> list[str]:
     return nomes
 
 
-def _ano_da_entrada(entrada: str) -> int | None:
-    anos = _RE_ANO.findall(entrada)
-    return int(anos[-1]) if anos else None
+# Não são data de publicação: a data de acesso e os identificadores. Em
+# "BOSWINKEL … abr. 2022 … Acesso em: 11 maio 2026" o último ano da entrada é o
+# do acesso; em "DOI: 10.14763/2026.1.2074" o "2074" é sufixo do DOI. Ler o
+# último ano do texto bruto inventa "ano divergente" contra a chamada certa.
+_RE_CAUDA_DE_ACESSO = re.compile(
+    r"(?i)\b(?:dispon[íi]vel\s+em|available\s+at|acesso\s+em|accessed)\b.*$", re.S
+)
+_RE_IDENTIFICADOR = re.compile(
+    r"(?ix)"
+    r"10\.\d{4,9}/\S+"  # DOI
+    r"|\bISBN(?:-1[03])?\s*:?\s*[\dXx][\dXx\-\s]{8,}"  # ISBN-10/13
+    r"|\bISSN\s*:?\s*[\dXx]{4}-?[\dXx]{4}"  # ISSN
+    r"|\be-?locator\s*:?\s*\S+"  # e-locator
+)
+
+
+def _anos_da_entrada(entrada: str) -> set[int]:
+    """Anos de publicação candidatos da entrada — conjunto, não valor único.
+
+    O cruzamento com a chamada é tolerante a conjunto: uma entrada pode citar
+    mais de um ano (edição e reimpressão, intervalo de anos) e nenhum deles pode
+    virar "ano divergente" por escolha arbitrária do parser.
+    """
+    texto = _RE_CAUDA_DE_ACESSO.sub("", entrada or "")
+    texto = _RE_IDENTIFICADOR.sub(" ", texto)
+    return {int(a) for a in _RE_ANO.findall(texto)}
 
 
 # ---------------------------------------------------------------- checagens
@@ -1111,6 +1231,27 @@ def checar_autor(doc, norma: Norma, estrito: bool = False) -> Resultado:
     )
 
 
+def _entradas_da_chamada(
+    chamada: Chamada,
+    dono: dict[str, set[int]],
+    anos_por_entrada: list[set[int]],
+) -> set[int]:
+    """Índices das entradas que a chamada satisfaz.
+
+    Com duas entradas do mesmo sobrenome (FOUCAULT 2001 e 2014), o ano decide
+    qual foi citada; quando o ano não desambigua — ou a chamada não traz ano —
+    todas as do sobrenome contam, senão uma delas vira "não citada" sem base.
+    """
+    achadas: set[int] = set()
+    for nome in chamada.nomes:
+        indices = dono.get(nome)
+        if not indices:
+            continue
+        casam = {i for i in indices if chamada.ano in anos_por_entrada[i]}
+        achadas |= casam or indices
+    return achadas
+
+
 def checar_referencias(doc, norma: Norma, estrito: bool = False) -> Resultado:
     limite = norma.limite("secoes_obrigatorias")
     # A coerência citação × bibliografia só é cobrada quando a norma fixa que
@@ -1133,33 +1274,39 @@ def checar_referencias(doc, norma: Norma, estrito: bool = False) -> Resultado:
     # dois autores ("Miller e Damask, 1996") casa pela entrada em qualquer um, e
     # a chamada que traz só o segundo autor também. Uma perda aqui gera dois FAIL
     # de sentido oposto (citação sem entrada + entrada não citada).
-    mapa: dict[str, set[int]] = defaultdict(set)
-    dono: dict[str, int] = {}  # sobrenome -> índice da entrada
+    mapa: dict[str, set[int]] = defaultdict(set)  # sobrenome -> anos declarados
+    dono: dict[str, set[int]] = defaultdict(set)  # sobrenome -> índices das entradas
     autores_por_entrada: list[list[str]] = []
+    anos_por_entrada: list[set[int]] = []
     sem_sobrenome: list[str] = []
     for indice, entrada in enumerate(entradas):
         autores = _autores_da_entrada(entrada)
         autores_por_entrada.append(autores)
+        anos = _anos_da_entrada(entrada)
+        anos_por_entrada.append(anos)
         if not autores:
             sem_sobrenome.append(achatar(entrada, 60))
             continue
-        ano = _ano_da_entrada(entrada)
         for autor in autores:
-            dono.setdefault(autor, indice)
-            if ano:
-                mapa[autor].add(ano)
-            else:
-                mapa[autor]  # entrada sem ano conta como existente
+            # O mesmo sobrenome pode ter duas entradas (FOUCAULT 2001 e 2014):
+            # guardar só a primeira deixa a segunda eternamente "não citada".
+            dono[autor].add(indice)
+            mapa[autor] |= anos  # entrada sem ano continua contando como existente
 
     citadas: set[int] = set()
     sem_entrada: dict[str, None] = {}  # dict ordenado: sem duplicar chamada repetida
     anos_divergentes: set[tuple[str, int]] = set()
+    mencionados_como_titulo: dict[str, None] = {}
     for chamada in chamadas:
-        achadas = {dono[nome] for nome in chamada.nomes if nome in dono}
+        achadas = _entradas_da_chamada(chamada, dono, anos_por_entrada)
         if achadas:
             citadas |= achadas
-        else:
+        elif chamada.pode_acusar():
             sem_entrada[chamada.rotulo()] = None
+        else:
+            # "Em Propaganda (1928)": título de obra em prosa, não chamada —
+            # não há entrada a exigir e acusar manda reescrever o que está certo.
+            mencionados_como_titulo[chamada.rotulo()] = None
         for nome in chamada.nomes:
             if nome in mapa and mapa[nome] and chamada.ano and chamada.ano not in mapa[nome]:
                 anos_divergentes.add((nome, chamada.ano))
@@ -1178,8 +1325,10 @@ def checar_referencias(doc, norma: Norma, estrito: bool = False) -> Resultado:
         "citacoes": len(citacoes),  # pares sobrenome-ano distintos
         "sobrenomes_citados": sorted(citados),
         "sobrenomes_na_bibliografia": sorted(mapa),
+        "anos_por_entrada": [sorted(anos) for anos in anos_por_entrada],
         "citacoes_sem_entrada": sem_entrada_lst,
         "anos_divergentes": [f"{s}, {a}" for s, a in sorted(anos_divergentes)],
+        "mencionadas_como_titulo": sorted(mencionados_como_titulo),
         "entradas_nao_citadas": nao_citadas,
         "entradas_sem_sobrenome": sem_sobrenome,
         "fonte": limite.fonte if limite.citavel else None,
@@ -1243,6 +1392,11 @@ def checar_referencias(doc, norma: Norma, estrito: bool = False) -> Resultado:
             detalhes,
         )
     nota = f"; {len(nao_citadas)} entradas não citadas" if nao_citadas else ""
+    if mencionados_como_titulo:
+        nota += (
+            f"; {len(mencionados_como_titulo)} menção(ões) a título de obra não "
+            f"cobrada(s) como chamada ({', '.join(sorted(mencionados_como_titulo))})"
+        )
     return Resultado(
         "referencias",
         "referências: entradas × citações",

@@ -24,6 +24,7 @@ from academia_tooling.docx_check import (
     checar_palavras,
     checar_referencias,
     checar_secoes,
+    extrair_chamadas,
     extrair_citacoes,
 )
 from academia_tooling.laudo import FAIL, MOTIVO_DOCUMENTO, NAO_VERIFICAVEL, PASS, Resultado
@@ -106,6 +107,62 @@ CASOS: list[tuple[str, object, dict, str, bool, str]] = [
         "citacao_dois_autores",
         False,
         PASS,
+    ),
+    # ---- referências: os falsos positivos medidos no card t_7c691dbc, um por
+    # causa, em fixtures sintéticas. Todos têm de ser PASS.
+    # data de acesso ("Acesso em: … 2026") lida como ano de publicação
+    (
+        "referencias",
+        checar_referencias,
+        {"secoes_obrigatorias": SECOES_ABNT},
+        "referencias_acesso",
+        False,
+        PASS,
+    ),
+    # dígitos do DOI ("10.14763/2026.1.2074") lidos como ano
+    (
+        "referencias",
+        checar_referencias,
+        {"secoes_obrigatorias": SECOES_ABNT},
+        "referencias_doi",
+        False,
+        PASS,
+    ),
+    # apud: a fonte não consultada não entra nas referências
+    (
+        "referencias",
+        checar_referencias,
+        {"secoes_obrigatorias": SECOES_ABNT},
+        "referencias_apud",
+        False,
+        PASS,
+    ),
+    # título de obra em prosa ("Em Propaganda (1928)") não é chamada autor-data
+    (
+        "referencias",
+        checar_referencias,
+        {"secoes_obrigatorias": SECOES_ABNT},
+        "referencias_titulo_prosa",
+        False,
+        PASS,
+    ),
+    # duas entradas do mesmo sobrenome: a segunda também é citada
+    (
+        "referencias",
+        checar_referencias,
+        {"secoes_obrigatorias": SECOES_ABNT},
+        "referencias_autor_repetido",
+        False,
+        PASS,
+    ),
+    # trava do verdadeiro positivo: chamada autor-data sem entrada reprova
+    (
+        "referencias",
+        checar_referencias,
+        {"secoes_obrigatorias": SECOES_ABNT},
+        "referencias_sem_entrada",
+        False,
+        FAIL,
     ),
     ("referencias", checar_referencias, {"secoes_obrigatorias": None}, "conforme", False, NAO_VERIFICAVEL),
 ]
@@ -251,6 +308,122 @@ def test_manuscrito_em_nota_de_rodape_nao_e_reprovado(tmp_path, norma_factory):
     assert resultado.status == NAO_VERIFICAVEL
     assert resultado.motivo_nao_verificavel == MOTIVO_DOCUMENTO
     assert "nota de rodapé" in resultado.mensagem
+
+
+# --------------------------------- t_7c691dbc: 10 FAIL falsos em manuscrito ABNT
+# Cada teste abaixo isola uma causa medida no manuscrito real. As fixtures são
+# sintéticas (nada de vault): o que se reproduz é o *padrão* da entrada/chamada.
+
+
+def _referencias(docx, norma_factory, fixture: str, estrito: bool = False) -> Resultado:
+    from docx import Document
+
+    norma = norma_factory(secoes_obrigatorias=SECOES_ABNT)
+    return checar_referencias(Document(str(docx[fixture])), norma, estrito)
+
+
+def test_ano_de_acesso_nao_vira_ano_de_publicacao(docx, norma_factory):
+    """F1: em referência online o último ano é o do `Acesso em:`, não o da obra.
+
+    Cinco acusações falsas de "ano divergente" vinham de `anos[-1]`.
+    """
+    resultado = _referencias(docx, norma_factory, "referencias_acesso")
+    assert resultado.status == PASS, resultado.mensagem
+    # o ano lido de cada entrada é o de publicação, não o do acesso (2026)
+    assert resultado.detalhes["anos_por_entrada"] == [[2022], [2017], [2025], [2018], [2009]]
+    assert resultado.detalhes["anos_divergentes"] == []
+    assert resultado.detalhes["citacoes_sem_entrada"] == []
+    assert resultado.detalhes["entradas_nao_citadas"] == []
+
+
+def test_digitos_do_doi_nao_viram_ano(docx, norma_factory):
+    """F2: `DOI: 10.14763/2026.1.2074` produzia ano 2074 contra a chamada de 2026."""
+    resultado = _referencias(docx, norma_factory, "referencias_doi")
+    assert resultado.status == PASS, resultado.mensagem
+    assert resultado.detalhes["anos_por_entrada"] == [[2026]]
+    assert resultado.detalhes["anos_divergentes"] == []
+
+
+def test_apud_so_exige_a_obra_consultada(docx, norma_factory):
+    """F3: NBR 10520 — a fonte não consultada citada por *apud* não é entrada."""
+    resultado = _referencias(docx, norma_factory, "referencias_apud")
+    assert resultado.status == PASS, resultado.mensagem
+    assert resultado.detalhes["citacoes_sem_entrada"] == []
+    assert resultado.detalhes["sobrenomes_citados"] == ["boswinkel"]
+    assert "rid" not in resultado.detalhes["sobrenomes_na_bibliografia"]
+
+
+def test_titulo_de_obra_em_prosa_nao_vira_chamada(docx, norma_factory):
+    """F4/F6: "Em Propaganda (1928)" é menção a título, não chamada autor-data."""
+    resultado = _referencias(docx, norma_factory, "referencias_titulo_prosa")
+    assert resultado.status == PASS, resultado.mensagem
+    assert resultado.detalhes["citacoes_sem_entrada"] == []
+    assert resultado.detalhes["mencionadas_como_titulo"] == [
+        "opinion (1922)",
+        "propaganda (1928)",
+    ]
+
+
+def test_autor_com_duas_entradas_marca_as_duas(docx, norma_factory):
+    """F5: `dono.setdefault` deixava a segunda obra do mesmo autor "não citada"."""
+    resultado = _referencias(docx, norma_factory, "referencias_autor_repetido")
+    assert resultado.status == PASS, resultado.mensagem
+    assert resultado.detalhes["entradas_nao_citadas"] == []
+    assert resultado.detalhes["citacoes_sem_entrada"] == []
+    assert resultado.detalhes["anos_por_entrada"] == [[2001], [2014], [2017], [2022]]
+
+
+def test_citacao_sem_entrada_continua_reprovando(docx, norma_factory):
+    """Trava: o verdadeiro positivo não pode virar PASS na correção dos falsos.
+
+    `(EGN/PPGEM, 2026)` é chamada autor-data sem entrada (o caso real que sobrava
+    depois de descontadas as 10 acusações falsas); `(Klein, 2020)` cobre a
+    chamada em caixa mista, que continua tendo de reprovar.
+    """
+    resultado = _referencias(docx, norma_factory, "referencias_sem_entrada")
+    assert resultado.status == FAIL
+    assert "egn (2026)" in resultado.detalhes["citacoes_sem_entrada"]
+    assert "klein (2020)" in resultado.detalhes["citacoes_sem_entrada"]
+    assert "foucault (1979)" not in resultado.detalhes["citacoes_sem_entrada"]
+
+
+def test_chamada_em_caixa_baixa_continua_sendo_chamada():
+    """F4 sem excesso: só a partícula de título (em/no/na) desqualifica a chamada."""
+    chamadas = {
+        chamada.rotulo(): chamada
+        for chamada in extrair_chamadas(
+            "Segundo Lippmann (1922), o estereótipo antecede o juízo. "
+            "Em Propaganda (1928), Lippmann descrevera a fabricação do consentimento. "
+            "A crítica está em (Klein, 2020) e o método em (SILVA; SOUZA, 2024)."
+        )
+    }
+    assert chamadas["lippmann (1922)"].pode_acusar()
+    assert chamadas["klein (2020)"].pode_acusar()
+    assert chamadas["silva (2024)"].pode_acusar()
+    assert chamadas["souza (2024)"].pode_acusar()
+    assert not chamadas["propaganda (1928)"].pode_acusar()
+
+
+def test_apud_extrai_apenas_a_obra_consultada():
+    (chamada,) = extrair_chamadas("(RID, 2020, p. 13–14 apud BOSWINKEL et al., 2022, p. 5)")
+    assert chamada.nomes == ("boswinkel",)
+    assert chamada.ano == 2022
+
+
+def test_anos_da_entrada_ignora_acesso_doi_e_issn():
+    """Ano de entrada é conjunto e exclui cauda de acesso e identificadores."""
+    from academia_tooling.docx_check import _anos_da_entrada
+
+    assert _anos_da_entrada(
+        "BOSWINKEL, H. et al. Coordinated behavior. Journal, abr. 2022. "
+        "Disponível em: https://exemplo.invalid/artigo/2291. Acesso em: 11 maio 2026."
+    ) == {2022}
+    assert _anos_da_entrada(
+        "CHEN, Y. Governing recommendation. Internet Policy Review, 2026. "
+        "DOI: 10.14763/2026.1.2074. ISSN 2043-5432."
+    ) == {2026}
+    # duas datas legítimas (edição e reimpressão): o conjunto preserva as duas
+    assert _anos_da_entrada("SILVA, J. Um artigo. Revista, 2019. 2. ed. 2021.") == {2019, 2021}
 
 
 # ------------------------------------------------- t_7026bcd5: PASS por estatística
