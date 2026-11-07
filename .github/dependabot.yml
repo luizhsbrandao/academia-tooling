@@ -1,0 +1,30 @@
+version: 2
+# Dependabot — PR de atualização versionada (o alerta sem PR depende de alguém olhar).
+# Padrão da frota: semanal, segunda 06:30 em America/Sao_Paulo, agrupado por tipo para
+# não inundar: patch+minor num PR só por ecossistema, major separado e com revisão humana.
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:30"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      minor-e-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:30"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"
