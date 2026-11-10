@@ -102,6 +102,16 @@ id = "bearer-token"
 description = "Bearer token literal"
 regex = '''(?i)bearer\s+[A-Za-z0-9._\-]{20,}'''
 
+[[rules]]
+id = "api-hash"
+description = "Hash de API no formato do Telegram (api_hash de 32 hexadecimais)"
+# `TELEGRAM_API_HASH` não tem palavra-chave que a regra genérica reconheça (KEY, TOKEN,
+# SECRET, PASSWORD, …): o valor é hex de 32 e passava batido desde que o
+# `generic-api-key` do default — que cobria esse nome — foi desligado por ruído. Aqui o
+# nome é `api_hash` e o valor é hex de 32 EXATO: hash de commit (40) e checksum de
+# arquivo não casam.
+regex = '''(?i)(?:[a-z0-9]+[_-])*api[_ -]?hash\b["']?\s*[:=]\s*["']?[0-9a-f]{32}["']?'''
+
 # ── Arquivo .env staged (o clássico) ──────────────────────────────────────
 # Duas camadas: (a) qualquer atribuição não-vazia num `.env` bloqueia —
 # `.env` versionado é erro por convenção, não por conteúdo; (b) a regra por
