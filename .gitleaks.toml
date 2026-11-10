@@ -111,6 +111,26 @@ description = "Hash de API no formato do Telegram (api_hash de 32 hexadecimais)"
 # nome é `api_hash` e o valor é hex de 32 EXATO: hash de commit (40) e checksum de
 # arquivo não casam.
 regex = '''(?i)(?:[a-z0-9]+[_-])*api[_ -]?hash\b["']?\s*[:=]\s*["']?[0-9a-f]{32}["']?'''
+[rules.allowlists]
+description = "Placeholder canônico: bloco de 16 hex repetido 2×, nunca credencial"
+# Allowlist por VALOR do placeholder, não por caminho e não por forma: o
+# `telegram/.env.example` do pia-automation carrega `abcdef1234567890` duas vezes e o
+# gate tem de continuar varrendo aquele arquivo — hash real colado ao lado dele é achado
+# (card t_b82301e8). Por isso a isenção mora aqui, no valor, e não numa isenção de path.
+#
+# Ancorada no FIM do match (`[:=]` … `$`) e com os três valores escritos por inteiro: só
+# o placeholder INTEIRO é isentado — `abcdef1234567890` seguido de 16 hex sorteados
+# continua sendo detectado (teste `tests/test_api_hash_placeholder.py`).
+#
+# Medido em 8.30.1: funciona sob `--redact` (é como o hook roda) porque a allowlist é
+# avaliada sobre o match CRU, antes de a redação trocar o valor por `REDACTED` — o que
+# não funciona sob `--redact` é padronizar por FORMA (ex.: "só maiúsculas"), não ancorar
+# na literal. Medido: 0 achados para `abcdef…`/`012345…`, 1 achado para
+# `secrets.token_hex(16)`, com e sem `--redact`.
+regexTarget = "match"
+regexes = [
+  '''(?i)[:=]\s*["']?(?:abcdef1234567890abcdef1234567890|0123456789abcdef0123456789abcdef|abcdef0123456789abcdef0123456789)["']?\s*$''',
+]
 
 # ── Arquivo .env staged (o clássico) ──────────────────────────────────────
 # Duas camadas: (a) qualquer atribuição não-vazia num `.env` bloqueia —
