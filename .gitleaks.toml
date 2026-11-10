@@ -77,10 +77,20 @@ id = "github-token"
 description = "Token do GitHub (ghp_/gho_/ghu_/ghs_/ghr_/github_pat_)"
 regex = '''(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})'''
 
+# FRONTEIRA: `\bsk-` não ancora (mesmo conserto do vault em
+# `pia-automation/gitleaks/vaults/_base.toml`, card t_f0ace0b7 — 10/11/2026,
+# propagado às 19 cópias pelo card t_63663000). O `\b` do Go/RE2 só considera
+# `[0-9A-Za-z_]` como palavra, então `gdańsk-…` vira `gdań|sk-…` e o slug de uma
+# matéria passa como chave. Lookbehind NÃO existe em RE2: `(?<!…)` faz o
+# gitleaks abortar com `panic: bad perl operator`, ou seja, gate morto. A forma
+# portátil é consumir o separador numa classe negativa Unicode e devolver o
+# segredo por `secretGroup`. Continua sem allowlist, como as demais regras
+# explícitas daqui: se o formato bate, o commit para.
 [[rules]]
 id = "openai-anthropic-key"
 description = "Chave estilo OpenAI/Anthropic (sk-/sk-ant-/sk-proj-)"
-regex = '''\bsk-(ant-|proj-)?[A-Za-z0-9_\-]{20,}'''
+regex = '''(?:^|[^\p{L}\p{N}_])(sk-(?:ant-|proj-)?[A-Za-z0-9_\-]{20,})'''
+secretGroup = 1
 
 [[rules]]
 id = "google-api-key"
